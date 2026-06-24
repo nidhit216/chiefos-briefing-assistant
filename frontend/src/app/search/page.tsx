@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { apiFetch } from "@/lib/api";
-import AppHeader from "@/app/components/AppHeader";
+import PageShell from "@/app/components/PageShell";
 import Toast from "@/app/components/Toast";
 import type { SearchResult } from "@/types";
 
@@ -69,8 +69,7 @@ export default function SearchPage() {
   };
 
   return (
-    <main className="min-h-screen p-6 max-w-4xl mx-auto">
-      <AppHeader />
+    <PageShell maxWidth="max-w-4xl">
       {toast && <Toast message={toast} onClose={() => setToast(null)} />}
 
       <div className="flex items-center justify-between mb-4">
@@ -158,6 +157,6 @@ export default function SearchPage() {
           No results found. Try embedding your data first.
         </p>
       )}
-    </main>
+    </PageShell>
   );
 }

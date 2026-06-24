@@ -1,11 +1,11 @@
 """Chat endpoint — conversational AI with RAG context."""
+import json
 import uuid
 from datetime import date, datetime, timezone
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from openai import AsyncOpenAI
 
 from app.config import get_settings
 from app.database import get_db
@@ -13,7 +13,9 @@ from app.dependencies import get_current_user
 from app.models.user import User
 from app.models.chat import ChatMessage
 from app.models.daily_brief import DailyBrief
+from app.models.memory import Memory
 from app.services.rag import get_relevant_context
+from app.services.ai_client import get_openai_client
 
 settings = get_settings()
 
@@ -44,6 +46,26 @@ Rules:
 - The user's name is {user_name}.
 """
 
+MEMORY_TOOLS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "save_memory",
+            "description": "Save a durable fact or preference about the user that should be remembered across all future conversations (e.g. preferences, recurring commitments, important relationships). Only call this when the user shares something worth remembering long-term, not for one-off questions.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "content": {
+                        "type": "string",
+                        "description": "The fact to remember, written in third person, e.g. 'Prefers async standups on Mondays.'",
+                    },
+                },
+                "required": ["content"],
+            },
+        },
+    }
+]
+
 
 @router.post("/", response_model=ChatResponse)
 async def chat(
@@ -68,6 +90,17 @@ async def chat(
     today_brief = brief_result.scalar_one_or_none()
     brief_context = f"\n\nToday's Brief:\n{today_brief.content}" if today_brief else ""
 
+    # Get long-term memories — not scoped to session_id, so these carry across conversations
+    memories_result = await db.execute(
+        select(Memory).where(Memory.user_id == user.id).order_by(Memory.created_at.asc())
+    )
+    memories = memories_result.scalars().all()
+    memory_context = (
+        "\n\nWhat you remember about this user:\n" + "\n".join(f"- {m.content}" for m in memories)
+        if memories
+        else ""
+    )
+
     # Get recent chat history for this session
     history_result = await db.execute(
         select(ChatMessage)
@@ -82,27 +115,43 @@ async def chat(
         today=date.today().strftime("%A, %B %d, %Y"),
         user_name=user.name,
     )
-    system += f"\n\nRelevant context from user's data:\n{context}{brief_context}"
+    system += f"\n\nRelevant context from user's data:\n{context}{brief_context}{memory_context}"
 
     messages = [{"role": "system", "content": system}]
     for msg in history:
         messages.append({"role": msg.role, "content": msg.content})
     messages.append({"role": "user", "content": request.message})
 
-    # Call LLM
-    client_kwargs = {"api_key": settings.openai_api_key}
-    if settings.ai_base_url:
-        client_kwargs["base_url"] = settings.ai_base_url
+    # Call LLM — give it a tool to save durable facts as long-term memory.
+    # Loop allows one round-trip for a tool call; chat never needs more than that.
+    client = get_openai_client()
+    reply = None
+    for _ in range(3):
+        response = await client.chat.completions.create(
+            model=settings.ai_model,
+            messages=messages,
+            tools=MEMORY_TOOLS,
+            temperature=0.7,
+            max_tokens=1000,
+        )
+        choice = response.choices[0]
 
-    client = AsyncOpenAI(**client_kwargs)
-    response = await client.chat.completions.create(
-        model=settings.ai_model,
-        messages=messages,
-        temperature=0.7,
-        max_tokens=1000,
-    )
+        if not choice.message.tool_calls:
+            reply = choice.message.content
+            break
 
-    reply = response.choices[0].message.content
+        messages.append(choice.message)
+        for tool_call in choice.message.tool_calls:
+            args = json.loads(tool_call.function.arguments)
+            db.add(Memory(user_id=user.id, content=args["content"]))
+            messages.append({
+                "role": "tool",
+                "tool_call_id": tool_call.id,
+                "content": json.dumps({"status": "saved"}),
+            })
+
+    if reply is None:
+        reply = "Done."
 
     # Save to chat history
     db.add(ChatMessage(user_id=user.id, session_id=session_id, role="user", content=request.message))

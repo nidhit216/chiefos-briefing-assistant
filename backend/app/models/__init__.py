@@ -5,5 +5,10 @@ from app.models.note import Note
 from app.models.daily_brief import DailyBrief
 from app.models.embedding import DocumentEmbedding
 from app.models.chat import ChatMessage
+from app.models.memory import Memory
+from app.models.brief_task import BriefTask
 
-__all__ = ["User", "Email", "CalendarEvent", "Note", "DailyBrief", "DocumentEmbedding", "ChatMessage"]
+__all__ = [
+    "User", "Email", "CalendarEvent", "Note", "DailyBrief", "DocumentEmbedding",
+    "ChatMessage", "Memory", "BriefTask",
+]

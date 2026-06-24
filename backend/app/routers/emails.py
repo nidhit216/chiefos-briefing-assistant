@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -8,16 +8,18 @@ from app.models.user import User
 from app.models.email import Email
 from app.schemas.email import EmailRead
 from app.services.gmail import sync_emails
+from app.services.cancellation import run_cancellable
 
 router = APIRouter()
 
 
 @router.post("/sync", response_model=list[EmailRead])
 async def sync_user_emails(
+    request: Request,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    await sync_emails(user, db)
+    await run_cancellable(request, sync_emails(user, db))
     result = await db.execute(
         select(Email).where(Email.user_id == user.id, Email.archived == False).order_by(Email.received_at.desc()).limit(50)
     )

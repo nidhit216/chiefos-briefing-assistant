@@ -1,6 +1,5 @@
 import json
 from datetime import date, datetime, timezone
-from openai import AsyncOpenAI
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -10,6 +9,9 @@ from app.models.email import Email
 from app.models.calendar_event import CalendarEvent
 from app.models.note import Note
 from app.models.daily_brief import DailyBrief
+from app.models.memory import Memory
+from app.services.ai_client import get_openai_client
+from app.services.brief_tasks import sync_brief_tasks
 
 settings = get_settings()
 
@@ -44,6 +46,12 @@ async def generate_brief(user: User, db: AsyncSession) -> DailyBrief:
     )
     notes = notes_result.scalars().all()
 
+    # Long-term memories, including feedback the user has given on past briefs
+    memories_result = await db.execute(
+        select(Memory).where(Memory.user_id == user.id).order_by(Memory.created_at.asc())
+    )
+    memories = memories_result.scalars().all()
+
     # Build prompt
     email_context = "\n".join(
         f"- From: {e.sender} | Subject: {e.subject} | Snippet: {e.snippet}"
@@ -56,6 +64,7 @@ async def generate_brief(user: User, db: AsyncSession) -> DailyBrief:
     notes_context = "\n".join(
         f"- {n.title}: {n.content[:200]}" for n in notes
     )
+    memory_context = "\n".join(f"- {m.content}" for m in memories)
 
     system_prompt = """You are an AI Chief of Staff. Generate a daily briefing for the user.
 Based on their emails, calendar events, and personal notes, produce a structured brief.
@@ -87,15 +96,14 @@ Upcoming Meetings:
 Personal Notes:
 {notes_context or "No notes."}
 
+What you remember about this user, including feedback on past briefs:
+{memory_context or "Nothing remembered yet."}
+
 Generate today's daily brief."""
 
     # Call AI provider (OpenAI-compatible)
-    client_kwargs = {"api_key": settings.openai_api_key}
-    if AI_BASE_URL:
-        client_kwargs["base_url"] = AI_BASE_URL
-
     try:
-        client = AsyncOpenAI(**client_kwargs)
+        client = get_openai_client()
         response = await client.chat.completions.create(
             model=AI_MODEL,
             messages=[
@@ -133,7 +141,7 @@ Generate today's daily brief."""
 
     # Validate JSON
     try:
-        json.loads(brief_content)
+        brief_json = json.loads(brief_content)
     except json.JSONDecodeError:
         from fastapi import HTTPException
         raise HTTPException(
@@ -148,6 +156,7 @@ Generate today's daily brief."""
         content=brief_content,
     )
     db.add(brief)
+    await sync_brief_tasks(user, brief_json, db)
     await db.commit()
     await db.refresh(brief)
 

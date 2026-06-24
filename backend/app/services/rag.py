@@ -152,10 +152,10 @@ async def semantic_search(
     # Use pgvector's <=> operator for cosine distance
     sql = text(f"""
         SELECT id, source_type, source_id, content_text,
-               1 - (embedding <=> :query_embedding::vector) as similarity
+               1 - (embedding <=> CAST(:query_embedding AS vector)) as similarity
         FROM document_embeddings
         WHERE {where_clause}
-        ORDER BY embedding <=> :query_embedding::vector
+        ORDER BY embedding <=> CAST(:query_embedding AS vector)
         LIMIT :limit
     """)
 

@@ -185,6 +185,35 @@ cd backend && pip install -r requirements.txt && uvicorn app.main:app --reload
 cd frontend && npm install && npm run dev
 ```
 
+## Testing
+
+The backend has a pytest suite covering every router (auth, briefs, calendar, emails, notes, chat, search, mcp) plus the underlying services (calendar/Gmail sync parsing, RAG/semantic search, AI tag generation, request-cancellation). It runs against the real Postgres + pgvector instance from `docker-compose.yml`, mocking only external calls (Google OAuth/Calendar/Gmail, the LLM) so it stays fast and deterministic.
+
+```bash
+# Run inside the backend container (uses the same DB as your dev stack)
+docker compose exec backend pytest -q
+
+# Run a single file or test
+docker compose exec backend pytest -q tests/test_notes.py
+docker compose exec backend pytest -q tests/test_notes.py::test_create_note_with_due_date_persists_it
+```
+
+Each test creates and tears down its own user (and any related notes/events/emails/briefs/embeddings), so the suite is safe to run repeatedly against your dev database without leaving stray data behind.
+
+| Test file | Covers |
+|-----------|--------|
+| `test_auth.py` | Login redirect, OAuth callback (new/existing user, failure paths), `/auth/me`, JWT edge cases |
+| `test_briefs.py` | Brief list/today endpoints, generation mode fallback |
+| `test_calendar.py` / `test_calendar_service.py` | Calendar router (list/archive/sync) and Google Calendar event parsing/dedup |
+| `test_emails.py` / `test_gmail_service.py` | Email router and Gmail sync parsing/dedup |
+| `test_notes.py` | Notes CRUD, AI tag generation/merge, due dates, tag/date filters |
+| `test_chat.py` | Chat sessions, history, RAG context injection |
+| `test_search.py` | Semantic search and embedding endpoints |
+| `test_mcp.py` | External MCP server registration/tool calls |
+| `test_rag.py` | Vector similarity search against real pgvector (regression coverage for the `embedding <=> :param::vector` SQL cast bug) |
+| `test_cancellation.py` / `test_cancellation_integration.py` | Stop/cancel behavior for brief generation and calendar/email sync |
+| `test_ai_client.py` | Shared OpenAI client config and AI tag-suggestion helper |
+
 ## Troubleshooting
 
 ### Application won't start

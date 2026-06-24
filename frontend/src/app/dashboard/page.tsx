@@ -1,10 +1,12 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { motion } from "framer-motion";
 import { apiFetch } from "@/lib/api";
 import AppHeader from "@/app/components/AppHeader";
+import PageShell from "@/app/components/PageShell";
 import Toast from "@/app/components/Toast";
 import type {
   User,
@@ -13,6 +15,7 @@ import type {
   Note,
   DailyBrief,
   BriefContent,
+  BriefTask,
 } from "@/types";
 
 export default function DashboardPage() {
@@ -22,6 +25,7 @@ export default function DashboardPage() {
   const [emails, setEmails] = useState<Email[]>([]);
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [notes, setNotes] = useState<Note[]>([]);
+  const [tasks, setTasks] = useState<BriefTask[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
@@ -30,6 +34,13 @@ export default function DashboardPage() {
   const [refreshingNotes, setRefreshingNotes] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [briefMode, setBriefMode] = useState<"agent" | "simple">("agent");
+  const briefAbortRef = useRef<AbortController | null>(null);
+  const calendarAbortRef = useRef<AbortController | null>(null);
+  const emailsAbortRef = useRef<AbortController | null>(null);
+
+  function isAbortError(err: unknown) {
+    return err instanceof DOMException && err.name === "AbortError";
+  }
 
   const archiveEmail = useCallback(async (id: string) => {
     await apiFetch(`/emails/${id}/archive`, { method: "POST" });
@@ -41,6 +52,39 @@ export default function DashboardPage() {
     setEvents((prev) => prev.filter((e) => e.id !== id));
   }, []);
 
+  const sortedNotes = useMemo(
+    () => [...notes].sort((a, b) => Number(a.completed) - Number(b.completed)).slice(0, 6),
+    [notes]
+  );
+
+  const toggleNoteCompleted = useCallback(async (note: Note) => {
+    setNotes((prev) =>
+      prev.map((n) => (n.id === note.id ? { ...n, completed: !n.completed } : n))
+    );
+    await apiFetch(`/notes/${note.id}`, {
+      method: "PUT",
+      body: JSON.stringify({
+        title: note.title,
+        content: note.content,
+        tags: note.tags,
+        due_date: note.due_date,
+        completed: !note.completed,
+      }),
+    });
+  }, []);
+
+  const toggleTaskCompleted = useCallback(async (task: BriefTask) => {
+    setTasks((prev) =>
+      prev
+        .map((t) => (t.id === task.id ? { ...t, completed: !t.completed } : t))
+        .sort((a, b) => Number(a.completed) - Number(b.completed))
+    );
+    await apiFetch(`/briefs/tasks/${task.id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ completed: !task.completed }),
+    });
+  }, []);
+
   useEffect(() => {
     const token = localStorage.getItem("chiefos_token");
     if (!token) {
@@ -50,13 +94,14 @@ export default function DashboardPage() {
 
     async function loadDashboard() {
       try {
-        const [userRes, briefRes, emailsRes, eventsRes, notesRes] =
+        const [userRes, briefRes, emailsRes, eventsRes, notesRes, tasksRes] =
           await Promise.all([
             apiFetch("/auth/me"),
             apiFetch("/briefs/today"),
             apiFetch("/emails/"),
             apiFetch("/calendar/"),
             apiFetch("/notes/"),
+            apiFetch("/briefs/tasks"),
           ]);
 
         setUser(await userRes.json());
@@ -77,6 +122,7 @@ export default function DashboardPage() {
         if (emailsRes.ok) setEmails(await emailsRes.json());
         if (eventsRes.ok) setEvents(await eventsRes.json());
         if (notesRes.ok) setNotes(await notesRes.json());
+        if (tasksRes.ok) setTasks(await tasksRes.json());
       } catch (_) {
         router.push("/login");
       } finally {
@@ -96,7 +142,7 @@ export default function DashboardPage() {
   }
 
   return (
-    <main className="min-h-screen p-6 max-w-7xl mx-auto">
+    <PageShell>
       <AppHeader userName={user?.name?.split(" ")[0]} />
       {toast && <Toast message={toast} onClose={() => setToast(null)} />}
 
@@ -117,46 +163,66 @@ export default function DashboardPage() {
                 <option value="agent">Agent (RAG)</option>
                 <option value="simple">Simple</option>
               </select>
-              <button
-                onClick={async () => {
-                  setError(null);
-                  setGenerating(true);
-                  try {
-                    const res = await apiFetch(`/briefs/generate?mode=${briefMode}`, {
-                      method: "POST",
-                    });
-                    if (res.ok) {
-                      const data: DailyBrief = await res.json();
-                      const parsed = JSON.parse(data.content);
-                      setBrief({
-                        priorities: parsed.priorities || [],
-                        focus_areas: parsed.focus_areas || [],
-                        time_critical: parsed.time_critical || [],
-                        coming_soon: parsed.coming_soon || [],
+              {generating ? (
+                <button
+                  onClick={() => briefAbortRef.current?.abort()}
+                  className="text-xs px-2 py-1 rounded-md bg-red-50 text-red-600 hover:bg-red-100 transition-colors flex items-center gap-1"
+                  title="Stop generating"
+                >
+                  <svg className="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                  Stop
+                </button>
+              ) : (
+                <button
+                  onClick={async () => {
+                    setError(null);
+                    setGenerating(true);
+                    const controller = new AbortController();
+                    briefAbortRef.current = controller;
+                    try {
+                      const res = await apiFetch(`/briefs/generate?mode=${briefMode}`, {
+                        method: "POST",
+                        signal: controller.signal,
                       });
-                    } else {
-                      const err = await res.json().catch(() => null);
-                      setError(
-                        err?.detail ||
-                          `Something went wrong (${res.status}). Please try again.`
-                      );
+                      if (res.ok) {
+                        const data: DailyBrief = await res.json();
+                        const parsed = JSON.parse(data.content);
+                        setBrief({
+                          priorities: parsed.priorities || [],
+                          focus_areas: parsed.focus_areas || [],
+                          time_critical: parsed.time_critical || [],
+                          coming_soon: parsed.coming_soon || [],
+                        });
+                        const tasksRes = await apiFetch("/briefs/tasks");
+                        if (tasksRes.ok) setTasks(await tasksRes.json());
+                      } else {
+                        const err = await res.json().catch(() => null);
+                        setError(
+                          err?.detail ||
+                            `Something went wrong (${res.status}). Please try again.`
+                        );
+                      }
+                    } catch (err) {
+                      if (!isAbortError(err)) {
+                        setError(
+                          "Could not reach the server. Please check that the backend is running."
+                        );
+                      }
+                    } finally {
+                      setGenerating(false);
+                      briefAbortRef.current = null;
                     }
-                  } catch (_) {
-                    setError(
-                      "Could not reach the server. Please check that the backend is running."
-                    );
-                  } finally {
-                    setGenerating(false);
-                  }
-                }}
-                disabled={generating}
-                className="p-2 text-gray-500 hover:text-primary-600 hover:bg-gray-100 rounded-md transition-colors disabled:opacity-50"
-                title="Generate / Regenerate brief"
-              >
-                <svg className={`w-5 h-5 ${generating ? "animate-spin" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                </svg>
-              </button>
+                  }}
+                  className="p-2 text-gray-500 hover:text-primary-600 hover:bg-gray-100 rounded-md transition-colors disabled:opacity-50"
+                  title="Generate / Regenerate brief"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                </button>
+              )}
             </div>
           </div>
           {brief ? (
@@ -164,51 +230,99 @@ export default function DashboardPage() {
               <div>
                 <h3 className="font-medium text-green-700 mb-2">Priorities for Today</h3>
                 <ul className="space-y-1">
-                  {brief.priorities.map((p, i) => (
-                    <li key={i} className="text-green-700 flex items-start gap-2">
-                      <span className="mt-1.5 w-2 h-2 rounded-full bg-green-500 flex-shrink-0"></span>
-                      {p}
-                    </li>
-                  ))}
+                  {tasks
+                    .filter((t) => t.category === "priorities")
+                    .map((item) => (
+                      <motion.li layout key={item.id} className="flex items-start gap-2">
+                        <label className="flex items-start gap-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={item.completed}
+                            onChange={() => toggleTaskCompleted(item)}
+                            className="mt-1 h-4 w-4 rounded border-gray-300 text-green-600 focus:ring-green-500"
+                          />
+                          <span className={item.completed ? "line-through text-gray-400" : "text-green-700"}>
+                            {item.task}
+                          </span>
+                        </label>
+                      </motion.li>
+                    ))}
                 </ul>
               </div>
               <div>
                 <h3 className="font-medium text-gray-900 mb-2">Focus Areas</h3>
                 <ul className="space-y-1">
-                  {brief.focus_areas.map((f, i) => (
-                    <li key={i} className="text-gray-700 flex items-start gap-2">
-                      <span className="mt-1.5 w-2 h-2 rounded-full bg-gray-400 flex-shrink-0"></span>
-                      {f}
-                    </li>
-                  ))}
+                  {tasks
+                    .filter((t) => t.category === "focus_areas")
+                    .map((item) => (
+                      <motion.li layout key={item.id} className="flex items-start gap-2">
+                        <label className="flex items-start gap-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={item.completed}
+                            onChange={() => toggleTaskCompleted(item)}
+                            className="mt-1 h-4 w-4 rounded border-gray-300 text-gray-600 focus:ring-gray-500"
+                          />
+                          <span className={item.completed ? "line-through text-gray-400" : "text-gray-700"}>
+                            {item.task}
+                          </span>
+                        </label>
+                      </motion.li>
+                    ))}
                 </ul>
               </div>
               <div>
                 <h3 className="font-medium text-rose-900 mb-2">Time Critical</h3>
                 <ul className="space-y-1">
-                  {brief.time_critical.map((item, i) => (
-                    <li key={i} className="text-rose-900 flex items-start justify-between gap-2">
-                      <span className="flex items-start gap-2">
-                        <span className="mt-1.5 w-2 h-2 rounded-full bg-rose-700 flex-shrink-0"></span>
-                        {item.task}
-                      </span>
-                      <span className="text-xs bg-rose-100 text-rose-800 px-2 py-0.5 rounded whitespace-nowrap">{item.date}</span>
-                    </li>
-                  ))}
+                  {tasks
+                    .filter((t) => t.category === "time_critical")
+                    .map((item) => (
+                      <motion.li layout key={item.id} className="flex items-start justify-between gap-2">
+                        <label className="flex items-start gap-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={item.completed}
+                            onChange={() => toggleTaskCompleted(item)}
+                            className="mt-1 h-4 w-4 rounded border-gray-300 text-rose-700 focus:ring-rose-500"
+                          />
+                          <span className={item.completed ? "line-through text-gray-400" : "text-rose-900"}>
+                            {item.task}
+                          </span>
+                        </label>
+                        {item.date_label && (
+                          <span className="text-xs bg-rose-100 text-rose-800 px-2 py-0.5 rounded whitespace-nowrap">
+                            {item.date_label}
+                          </span>
+                        )}
+                      </motion.li>
+                    ))}
                 </ul>
               </div>
               <div>
                 <h3 className="font-medium text-gray-900 mb-2">Coming Soon</h3>
                 <ul className="space-y-1">
-                  {brief.coming_soon.map((item, i) => (
-                    <li key={i} className="text-gray-600 flex items-start justify-between gap-2">
-                      <span className="flex items-start gap-2">
-                        <span className="mt-1.5 w-2 h-2 rounded-full bg-blue-400 flex-shrink-0"></span>
-                        {item.task}
-                      </span>
-                      <span className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded whitespace-nowrap">{item.date}</span>
-                    </li>
-                  ))}
+                  {tasks
+                    .filter((t) => t.category === "coming_soon")
+                    .map((item) => (
+                      <motion.li layout key={item.id} className="flex items-start justify-between gap-2">
+                        <label className="flex items-start gap-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={item.completed}
+                            onChange={() => toggleTaskCompleted(item)}
+                            className="mt-1 h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                          />
+                          <span className={item.completed ? "line-through text-gray-400" : "text-gray-600"}>
+                            {item.task}
+                          </span>
+                        </label>
+                        {item.date_label && (
+                          <span className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded whitespace-nowrap">
+                            {item.date_label}
+                          </span>
+                        )}
+                      </motion.li>
+                    ))}
                 </ul>
               </div>
             </div>
@@ -271,16 +385,28 @@ export default function DashboardPage() {
           </div>
           {notes.length > 0 ? (
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-              {notes.slice(0, 6).map((note) => (
+              {sortedNotes.map((note) => (
                 <div
                   key={note.id}
                   className="border border-gray-200 rounded-lg p-3"
                 >
-                  <p className="font-medium text-gray-900 text-sm">
-                    {note.title}
-                  </p>
+                  <div className="flex items-start gap-2">
+                    <input
+                      type="checkbox"
+                      checked={note.completed}
+                      onChange={() => toggleNoteCompleted(note)}
+                      className="mt-0.5 h-3.5 w-3.5 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                    />
+                    <p
+                      className={`font-medium text-sm ${
+                        note.completed ? "line-through text-gray-400" : "text-gray-900"
+                      }`}
+                    >
+                      {note.title}
+                    </p>
+                  </div>
                   <p className="text-xs text-gray-500 truncate">
-                    {note.content}
+                    {note.content.replace(/<[^>]+>/g, " ")}
                   </p>
                   {note.tags && (
                     <div className="flex gap-1 mt-2 flex-wrap">
@@ -308,26 +434,46 @@ export default function DashboardPage() {
             <h2 className="text-xl font-semibold text-gray-900">
               Upcoming Meetings
             </h2>
-            <button
-              onClick={async () => {
-                setSyncingCalendar(true);
-                try {
-                  const res = await apiFetch("/calendar/sync", { method: "POST" });
-                  if (res.ok) {
-                    setEvents(await res.json());
-                    setToast("Calendar synced successfully");
+            {syncingCalendar ? (
+              <button
+                onClick={() => calendarAbortRef.current?.abort()}
+                className="text-xs px-2 py-1 rounded-md bg-red-50 text-red-600 hover:bg-red-100 transition-colors flex items-center gap-1"
+                title="Stop syncing"
+              >
+                <svg className="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                Stop
+              </button>
+            ) : (
+              <button
+                onClick={async () => {
+                  setSyncingCalendar(true);
+                  const controller = new AbortController();
+                  calendarAbortRef.current = controller;
+                  try {
+                    const res = await apiFetch("/calendar/sync", {
+                      method: "POST",
+                      signal: controller.signal,
+                    });
+                    if (res.ok) {
+                      setEvents(await res.json());
+                      setToast("Calendar synced successfully");
+                    }
+                  } catch (err) {
+                    if (!isAbortError(err)) setToast("Could not sync calendar");
                   }
-                } catch (_) {}
-                setSyncingCalendar(false);
-              }}
-              disabled={syncingCalendar}
-              className="p-2 text-gray-500 hover:text-primary-600 hover:bg-gray-100 rounded-md transition-colors disabled:opacity-50"
-              title="Sync calendar from Google"
-            >
-              <svg className={`w-5 h-5 ${syncingCalendar ? "animate-spin" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-              </svg>
-            </button>
+                  setSyncingCalendar(false);
+                  calendarAbortRef.current = null;
+                }}
+                className="p-2 text-gray-500 hover:text-primary-600 hover:bg-gray-100 rounded-md transition-colors disabled:opacity-50"
+                title="Sync calendar from Google"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+              </button>
+            )}
           </div>
           {events.length > 0 ? (
             <ul className="space-y-3">
@@ -368,26 +514,46 @@ export default function DashboardPage() {
             <h2 className="text-xl font-semibold text-gray-900">
               Recent Emails
             </h2>
-            <button
-              onClick={async () => {
-                setSyncingEmails(true);
-                try {
-                  const res = await apiFetch("/emails/sync", { method: "POST" });
-                  if (res.ok) {
-                    setEmails(await res.json());
-                    setToast("Emails synced successfully");
+            {syncingEmails ? (
+              <button
+                onClick={() => emailsAbortRef.current?.abort()}
+                className="text-xs px-2 py-1 rounded-md bg-red-50 text-red-600 hover:bg-red-100 transition-colors flex items-center gap-1"
+                title="Stop syncing"
+              >
+                <svg className="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                Stop
+              </button>
+            ) : (
+              <button
+                onClick={async () => {
+                  setSyncingEmails(true);
+                  const controller = new AbortController();
+                  emailsAbortRef.current = controller;
+                  try {
+                    const res = await apiFetch("/emails/sync", {
+                      method: "POST",
+                      signal: controller.signal,
+                    });
+                    if (res.ok) {
+                      setEmails(await res.json());
+                      setToast("Emails synced successfully");
+                    }
+                  } catch (err) {
+                    if (!isAbortError(err)) setToast("Could not sync emails");
                   }
-                } catch (_) {}
-                setSyncingEmails(false);
-              }}
-              disabled={syncingEmails}
-              className="p-2 text-gray-500 hover:text-primary-600 hover:bg-gray-100 rounded-md transition-colors disabled:opacity-50"
-              title="Sync emails from Gmail"
-            >
-              <svg className={`w-5 h-5 ${syncingEmails ? "animate-spin" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-              </svg>
-            </button>
+                  setSyncingEmails(false);
+                  emailsAbortRef.current = null;
+                }}
+                className="p-2 text-gray-500 hover:text-primary-600 hover:bg-gray-100 rounded-md transition-colors disabled:opacity-50"
+                title="Sync emails from Gmail"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+              </button>
+            )}
           </div>
           {emails.length > 0 ? (
             <ul className="space-y-3">
@@ -419,6 +585,6 @@ export default function DashboardPage() {
           )}
         </section>
       </div>
-    </main>
+    </PageShell>
   );
 }

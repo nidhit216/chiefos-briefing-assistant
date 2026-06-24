@@ -29,6 +29,8 @@ export interface Note {
   title: string;
   content: string;
   tags: string[] | null;
+  due_date: string | null;
+  completed: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -65,4 +67,26 @@ export interface ChatResponse {
   reply: string;
   session_id: string;
   sources_used: number;
+}
+
+export interface ChatSession {
+  session_id: string;
+  last_message: string;
+  last_at: string;
+}
+
+export interface Memory {
+  id: string;
+  content: string;
+  brief_id: string | null;
+  created_at: string;
+}
+
+export interface BriefTask {
+  id: string;
+  category: "priorities" | "focus_areas" | "time_critical" | "coming_soon";
+  task: string;
+  date_label: string | null;
+  completed: boolean;
+  created_at: string;
 }

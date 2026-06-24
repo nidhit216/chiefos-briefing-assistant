@@ -1,7 +1,6 @@
 """Agent-based brief generation using ReAct pattern with tool calling."""
 import json
 from datetime import date, datetime, timezone
-from openai import AsyncOpenAI
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -11,7 +10,10 @@ from app.models.email import Email
 from app.models.calendar_event import CalendarEvent
 from app.models.note import Note
 from app.models.daily_brief import DailyBrief
+from app.models.memory import Memory
 from app.services.rag import semantic_search
+from app.services.ai_client import get_openai_client
+from app.services.brief_tasks import sync_brief_tasks
 
 settings = get_settings()
 
@@ -155,6 +157,13 @@ async def _execute_tool(tool_name: str, args: dict, user: User, db: AsyncSession
 async def generate_brief_with_agent(user: User, db: AsyncSession) -> DailyBrief:
     """Generate a brief using a ReAct-style agent that can call tools dynamically."""
 
+    # Long-term memories, including feedback the user has given on past briefs
+    memories_result = await db.execute(
+        select(Memory).where(Memory.user_id == user.id).order_by(Memory.created_at.asc())
+    )
+    memories = memories_result.scalars().all()
+    memory_context = "\n".join(f"- {m.content}" for m in memories) or "Nothing remembered yet."
+
     system_prompt = f"""You are an AI Chief of Staff agent. Today is {date.today().strftime('%A, %B %d, %Y')}.
 Your job is to analyze the user's emails, calendar, and notes to produce a structured daily briefing.
 
@@ -177,13 +186,12 @@ Rules:
 - "time_critical": Hard deadlines within 1-3 days with dates.
 - "coming_soon": Tasks/events in 4-14 days with dates.
 - User name: {user.name}
+
+What you remember about this user, including feedback on past briefs:
+{memory_context}
 """
 
-    client_kwargs = {"api_key": settings.openai_api_key}
-    if settings.ai_base_url:
-        client_kwargs["base_url"] = settings.ai_base_url
-
-    client = AsyncOpenAI(**client_kwargs)
+    client = get_openai_client()
     messages = [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": "Generate my daily brief for today. Use the tools to gather my data first."},
@@ -250,6 +258,7 @@ Rules:
         content=json.dumps(brief_json),
     )
     db.add(brief)
+    await sync_brief_tasks(user, brief_json, db)
     await db.commit()
     await db.refresh(brief)
     return brief

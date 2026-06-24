@@ -1,5 +1,6 @@
 import uuid
-from fastapi import APIRouter, Depends, HTTPException
+from datetime import date
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -8,18 +9,24 @@ from app.dependencies import get_current_user
 from app.models.user import User
 from app.models.note import Note
 from app.schemas.note import NoteCreate, NoteUpdate, NoteRead
+from app.services.ai_client import generate_tags
 
 router = APIRouter()
 
 
 @router.get("/", response_model=list[NoteRead])
 async def list_notes(
+    tags: list[str] | None = Query(None),
+    due_before: date | None = Query(None),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(
-        select(Note).where(Note.user_id == user.id).order_by(Note.updated_at.desc())
-    )
+    query = select(Note).where(Note.user_id == user.id)
+    if tags:
+        query = query.where(Note.tags.overlap(tags))
+    if due_before:
+        query = query.where(Note.due_date <= due_before)
+    result = await db.execute(query.order_by(Note.updated_at.desc()))
     return result.scalars().all()
 
 
@@ -29,7 +36,17 @@ async def create_note(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    note = Note(user_id=user.id, title=data.title, content=data.content, tags=data.tags)
+    user_tags = data.tags or []
+    ai_tags = await generate_tags(data.title, data.content)
+    merged_tags = user_tags + [t for t in ai_tags if t not in user_tags]
+
+    note = Note(
+        user_id=user.id,
+        title=data.title,
+        content=data.content,
+        tags=merged_tags or None,
+        due_date=data.due_date,
+    )
     db.add(note)
     await db.commit()
     await db.refresh(note)
@@ -71,6 +88,10 @@ async def update_note(
         note.content = data.content
     if data.tags is not None:
         note.tags = data.tags
+    # due_date is always assigned (not gated by `is not None`) so a client can clear it by sending null
+    note.due_date = data.due_date
+    if data.completed is not None:
+        note.completed = data.completed
 
     await db.commit()
     await db.refresh(note)

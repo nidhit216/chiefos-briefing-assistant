@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
-from app.routers import auth, emails, calendar, notes, briefs, search, chat, mcp
+from app.routers import auth, emails, calendar, notes, briefs, search, chat, mcp, memory
 
 settings = get_settings()
 
@@ -28,6 +28,7 @@ app.include_router(briefs.router, prefix="/briefs", tags=["briefs"])
 app.include_router(search.router, prefix="/search", tags=["search"])
 app.include_router(chat.router, prefix="/chat", tags=["chat"])
 app.include_router(mcp.router, prefix="/mcp", tags=["mcp"])
+app.include_router(memory.router, prefix="/memories", tags=["memories"])
 
 
 @app.get("/health")

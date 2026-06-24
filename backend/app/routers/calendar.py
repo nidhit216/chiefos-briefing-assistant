@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -8,16 +8,18 @@ from app.models.user import User
 from app.models.calendar_event import CalendarEvent
 from app.schemas.calendar_event import CalendarEventRead
 from app.services.calendar import sync_calendar
+from app.services.cancellation import run_cancellable
 
 router = APIRouter()
 
 
 @router.post("/sync", response_model=list[CalendarEventRead])
 async def sync_user_calendar(
+    request: Request,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    await sync_calendar(user, db)
+    await run_cancellable(request, sync_calendar(user, db))
     result = await db.execute(
         select(CalendarEvent)
         .where(CalendarEvent.user_id == user.id, CalendarEvent.archived == False)
