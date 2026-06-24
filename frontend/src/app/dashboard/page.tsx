@@ -1,0 +1,412 @@
+"use client";
+
+import { useEffect, useState, useCallback } from "react";
+import { useRouter } from "next/navigation";
+import Link from "next/link";
+import { apiFetch } from "@/lib/api";
+import AppHeader from "@/app/components/AppHeader";
+import Toast from "@/app/components/Toast";
+import type {
+  User,
+  Email,
+  CalendarEvent,
+  Note,
+  DailyBrief,
+  BriefContent,
+} from "@/types";
+
+export default function DashboardPage() {
+  const router = useRouter();
+  const [user, setUser] = useState<User | null>(null);
+  const [brief, setBrief] = useState<BriefContent | null>(null);
+  const [emails, setEmails] = useState<Email[]>([]);
+  const [events, setEvents] = useState<CalendarEvent[]>([]);
+  const [notes, setNotes] = useState<Note[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [generating, setGenerating] = useState(false);
+  const [syncingEmails, setSyncingEmails] = useState(false);
+  const [syncingCalendar, setSyncingCalendar] = useState(false);
+  const [refreshingNotes, setRefreshingNotes] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
+
+  const archiveEmail = useCallback(async (id: string) => {
+    await apiFetch(`/emails/${id}/archive`, { method: "POST" });
+    setEmails((prev) => prev.filter((e) => e.id !== id));
+  }, []);
+
+  const archiveEvent = useCallback(async (id: string) => {
+    await apiFetch(`/calendar/${id}/archive`, { method: "POST" });
+    setEvents((prev) => prev.filter((e) => e.id !== id));
+  }, []);
+
+  useEffect(() => {
+    const token = localStorage.getItem("chiefos_token");
+    if (!token) {
+      router.push("/login");
+      return;
+    }
+
+    async function loadDashboard() {
+      try {
+        const [userRes, briefRes, emailsRes, eventsRes, notesRes] =
+          await Promise.all([
+            apiFetch("/auth/me"),
+            apiFetch("/briefs/today"),
+            apiFetch("/emails/"),
+            apiFetch("/calendar/"),
+            apiFetch("/notes/"),
+          ]);
+
+        setUser(await userRes.json());
+
+        if (briefRes.ok) {
+          const briefData: DailyBrief | null = await briefRes.json();
+          if (briefData) {
+            const parsed = JSON.parse(briefData.content);
+            setBrief({
+              priorities: parsed.priorities || [],
+              focus_areas: parsed.focus_areas || [],
+              time_critical: parsed.time_critical || [],
+              coming_soon: parsed.coming_soon || [],
+            });
+          }
+        }
+
+        if (emailsRes.ok) setEmails(await emailsRes.json());
+        if (eventsRes.ok) setEvents(await eventsRes.json());
+        if (notesRes.ok) setNotes(await notesRes.json());
+      } catch (_) {
+        router.push("/login");
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    loadDashboard();
+  }, [router]);
+
+  if (loading) {
+    return (
+      <main className="flex min-h-screen items-center justify-center">
+        <p className="text-gray-500">Loading your dashboard...</p>
+      </main>
+    );
+  }
+
+  return (
+    <main className="min-h-screen p-6 max-w-7xl mx-auto">
+      <AppHeader userName={user?.name?.split(" ")[0]} />
+      {toast && <Toast message={toast} onClose={() => setToast(null)} />}
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Today's Brief */}
+        <section className="bg-white rounded-xl shadow p-6 lg:col-span-2">
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-xl font-semibold text-gray-900">
+              Today&apos;s Brief
+            </h2>
+            <button
+              onClick={async () => {
+                setError(null);
+                setGenerating(true);
+                try {
+                  const res = await apiFetch("/briefs/generate", {
+                    method: "POST",
+                  });
+                  if (res.ok) {
+                    const data: DailyBrief = await res.json();
+                    const parsed = JSON.parse(data.content);
+                    setBrief({
+                      priorities: parsed.priorities || [],
+                      focus_areas: parsed.focus_areas || [],
+                      time_critical: parsed.time_critical || [],
+                      coming_soon: parsed.coming_soon || [],
+                    });
+                  } else {
+                    const err = await res.json().catch(() => null);
+                    setError(
+                      err?.detail ||
+                        `Something went wrong (${res.status}). Please try again.`
+                    );
+                  }
+                } catch (_) {
+                  setError(
+                    "Could not reach the server. Please check that the backend is running."
+                  );
+                } finally {
+                  setGenerating(false);
+                }
+              }}
+              disabled={generating}
+              className="p-2 text-gray-500 hover:text-primary-600 hover:bg-gray-100 rounded-md transition-colors disabled:opacity-50"
+              title="Generate / Regenerate brief"
+            >
+              <svg className={`w-5 h-5 ${generating ? "animate-spin" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+            </button>
+          </div>
+          {brief ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <h3 className="font-medium text-green-700 mb-2">Priorities for Today</h3>
+                <ul className="space-y-1">
+                  {brief.priorities.map((p, i) => (
+                    <li key={i} className="text-green-700 flex items-start gap-2">
+                      <span className="mt-1.5 w-2 h-2 rounded-full bg-green-500 flex-shrink-0"></span>
+                      {p}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              <div>
+                <h3 className="font-medium text-gray-900 mb-2">Focus Areas</h3>
+                <ul className="space-y-1">
+                  {brief.focus_areas.map((f, i) => (
+                    <li key={i} className="text-gray-700 flex items-start gap-2">
+                      <span className="mt-1.5 w-2 h-2 rounded-full bg-gray-400 flex-shrink-0"></span>
+                      {f}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              <div>
+                <h3 className="font-medium text-rose-900 mb-2">Time Critical</h3>
+                <ul className="space-y-1">
+                  {brief.time_critical.map((item, i) => (
+                    <li key={i} className="text-rose-900 flex items-start justify-between gap-2">
+                      <span className="flex items-start gap-2">
+                        <span className="mt-1.5 w-2 h-2 rounded-full bg-rose-700 flex-shrink-0"></span>
+                        {item.task}
+                      </span>
+                      <span className="text-xs bg-rose-100 text-rose-800 px-2 py-0.5 rounded whitespace-nowrap">{item.date}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              <div>
+                <h3 className="font-medium text-gray-900 mb-2">Coming Soon</h3>
+                <ul className="space-y-1">
+                  {brief.coming_soon.map((item, i) => (
+                    <li key={i} className="text-gray-600 flex items-start justify-between gap-2">
+                      <span className="flex items-start gap-2">
+                        <span className="mt-1.5 w-2 h-2 rounded-full bg-blue-400 flex-shrink-0"></span>
+                        {item.task}
+                      </span>
+                      <span className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded whitespace-nowrap">{item.date}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          ) : (
+            <>
+            <p className="text-gray-500">
+              No brief generated yet today. Click the refresh icon above to generate one.
+            </p>
+            {error && (
+              <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-4">
+                <div className="flex items-start gap-3">
+                  <span className="text-red-500 text-lg">⚠️</span>
+                  <div>
+                    <p className="font-medium text-red-800">
+                      Failed to generate brief
+                    </p>
+                    <p className="text-sm text-red-700 mt-1">{error}</p>
+                  </div>
+                </div>
+              </div>
+            )}
+            </>
+          )}
+        </section>
+
+        {/* Notes */}
+        <section className="bg-white rounded-xl shadow p-6 lg:col-span-2">
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-xl font-semibold text-gray-900">
+              Personal Notes
+            </h2>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={async () => {
+                  setRefreshingNotes(true);
+                  try {
+                    const res = await apiFetch("/notes/");
+                    if (res.ok) {
+                      setNotes(await res.json());
+                      setToast("Notes refreshed");
+                    }
+                  } catch (_) {}
+                  setRefreshingNotes(false);
+                }}
+                disabled={refreshingNotes}
+                className="p-2 text-gray-500 hover:text-primary-600 hover:bg-gray-100 rounded-md transition-colors disabled:opacity-50"
+                title="Refresh notes"
+              >
+                <svg className={`w-5 h-5 ${refreshingNotes ? "animate-spin" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+              </button>
+              <Link
+                href="/notes"
+                className="text-primary-600 text-sm hover:underline"
+              >
+                View All
+              </Link>
+            </div>
+          </div>
+          {notes.length > 0 ? (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              {notes.slice(0, 6).map((note) => (
+                <div
+                  key={note.id}
+                  className="border border-gray-200 rounded-lg p-3"
+                >
+                  <p className="font-medium text-gray-900 text-sm">
+                    {note.title}
+                  </p>
+                  <p className="text-xs text-gray-500 truncate">
+                    {note.content}
+                  </p>
+                  {note.tags && (
+                    <div className="flex gap-1 mt-2 flex-wrap">
+                      {note.tags.map((tag) => (
+                        <span
+                          key={tag}
+                          className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded"
+                        >
+                          {tag}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-gray-500">No notes yet.</p>
+          )}
+        </section>
+
+        {/* Upcoming Meetings */}
+        <section className="bg-white rounded-xl shadow p-6">
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-xl font-semibold text-gray-900">
+              Upcoming Meetings
+            </h2>
+            <button
+              onClick={async () => {
+                setSyncingCalendar(true);
+                try {
+                  const res = await apiFetch("/calendar/sync", { method: "POST" });
+                  if (res.ok) {
+                    setEvents(await res.json());
+                    setToast("Calendar synced successfully");
+                  }
+                } catch (_) {}
+                setSyncingCalendar(false);
+              }}
+              disabled={syncingCalendar}
+              className="p-2 text-gray-500 hover:text-primary-600 hover:bg-gray-100 rounded-md transition-colors disabled:opacity-50"
+              title="Sync calendar from Google"
+            >
+              <svg className={`w-5 h-5 ${syncingCalendar ? "animate-spin" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+            </button>
+          </div>
+          {events.length > 0 ? (
+            <ul className="space-y-3">
+              {events.slice(0, 5).map((event) => {
+                const start = new Date(event.start_time);
+                const end = new Date(event.end_time);
+                const sameDay = start.toDateString() === end.toDateString();
+                const dateStr = sameDay
+                  ? start.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" }) + " · " + start.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })
+                  : start.toLocaleDateString(undefined, { month: "short", day: "numeric" }) + " – " + end.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+                return (
+                  <li key={event.id} className="border-l-4 border-primary-500 pl-3 flex justify-between items-start group">
+                    <div>
+                      <p className="font-medium text-gray-900">{event.title}</p>
+                      <p className="text-sm text-gray-500">{dateStr}</p>
+                    </div>
+                    <button
+                      onClick={() => archiveEvent(event.id)}
+                      className="opacity-0 group-hover:opacity-100 p-1 text-gray-400 hover:text-red-500 transition-opacity"
+                      title="Archive"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
+                      </svg>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          ) : (
+            <p className="text-gray-500">No upcoming meetings.</p>
+          )}
+        </section>
+
+        {/* Recent Emails */}
+        <section className="bg-white rounded-xl shadow p-6">
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-xl font-semibold text-gray-900">
+              Recent Emails
+            </h2>
+            <button
+              onClick={async () => {
+                setSyncingEmails(true);
+                try {
+                  const res = await apiFetch("/emails/sync", { method: "POST" });
+                  if (res.ok) {
+                    setEmails(await res.json());
+                    setToast("Emails synced successfully");
+                  }
+                } catch (_) {}
+                setSyncingEmails(false);
+              }}
+              disabled={syncingEmails}
+              className="p-2 text-gray-500 hover:text-primary-600 hover:bg-gray-100 rounded-md transition-colors disabled:opacity-50"
+              title="Sync emails from Gmail"
+            >
+              <svg className={`w-5 h-5 ${syncingEmails ? "animate-spin" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+            </button>
+          </div>
+          {emails.length > 0 ? (
+            <ul className="space-y-3">
+              {emails.slice(0, 5).map((email) => (
+                <li key={email.id} className="border-b border-gray-100 pb-2 flex justify-between items-start group">
+                  <div className="min-w-0 flex-1">
+                    <p className="font-medium text-gray-900 text-sm">
+                      {email.subject}
+                    </p>
+                    <p className="text-xs text-gray-500">{email.sender}</p>
+                    <p className="text-xs text-gray-400 truncate">
+                      {email.snippet}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => archiveEmail(email.id)}
+                    className="opacity-0 group-hover:opacity-100 p-1 text-gray-400 hover:text-red-500 transition-opacity flex-shrink-0 ml-2"
+                    title="Archive"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
+                    </svg>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-gray-500">No emails synced yet.</p>
+          )}
+        </section>
+      </div>
+    </main>
+  );
+}

@@ -1,0 +1,55 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-chiefos}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-chiefos_dev_password}
+      POSTGRES_DB: ${POSTGRES_DB:-chiefos}
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-chiefos}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build: ./backend
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-chiefos}:${POSTGRES_PASSWORD:-chiefos_dev_password}@db:5432/${POSTGRES_DB:-chiefos}
+      SECRET_KEY: ${SECRET_KEY:-change-this}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      AI_BASE_URL: ${AI_BASE_URL:-https://api.groq.com/openai/v1}
+      AI_MODEL: ${AI_MODEL:-llama-3.1-70b-versatile}
+      RESEND_API_KEY: ${RESEND_API_KEY}
+      FROM_EMAIL: ${FROM_EMAIL:-briefs@yourdomain.com}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3001}
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "3001:3000"
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8000
+      NEXTAUTH_URL: http://localhost:3001
+      NEXTAUTH_SECRET: ${SECRET_KEY:-change-this}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
+    depends_on:
+      - backend
+    volumes:
+      - ./frontend/src:/app/src
+
+volumes:
+  pgdata:
