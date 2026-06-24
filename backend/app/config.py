@@ -22,6 +22,9 @@ class Settings(BaseSettings):
     frontend_url: str = "http://localhost:3000"
     backend_url: str = "http://localhost:8000"
 
+    # MCP
+    mcp_server_port: int = 8001
+
     model_config = {"env_file": ".env"}
 
 

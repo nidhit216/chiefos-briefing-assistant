@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "chiefos": {
+      "command": "python",
+      "args": ["-m", "app.mcp_server"],
+      "cwd": "./backend",
+      "env": {
+        "DATABASE_URL": "postgresql+asyncpg://chiefos:chiefos_dev_password@localhost:5433/chiefos"
+      }
+    }
+  }
+}

@@ -6,6 +6,13 @@ import { usePathname } from "next/navigation";
 export default function AppHeader({ userName }: { userName?: string }) {
   const pathname = usePathname();
 
+  const navLinks = [
+    { href: "/search", label: "Search" },
+    { href: "/chat", label: "Chat" },
+    { href: "/notes", label: "Notes" },
+    { href: "/briefs", label: "Briefs" },
+  ];
+
   return (
     <header className="flex justify-between items-center mb-8">
       <div>
@@ -19,18 +26,15 @@ export default function AppHeader({ userName }: { userName?: string }) {
         )}
       </div>
       <nav className="flex gap-4">
-        <Link
-          href="/notes"
-          className={`hover:underline ${pathname === "/notes" ? "text-primary-800 font-medium" : "text-primary-600"}`}
-        >
-          Notes
-        </Link>
-        <Link
-          href="/briefs"
-          className={`hover:underline ${pathname === "/briefs" ? "text-primary-800 font-medium" : "text-primary-600"}`}
-        >
-          Brief History
-        </Link>
+        {navLinks.map((link) => (
+          <Link
+            key={link.href}
+            href={link.href}
+            className={`hover:underline ${pathname === link.href ? "text-primary-800 font-medium" : "text-primary-600"}`}
+          >
+            {link.label}
+          </Link>
+        ))}
       </nav>
     </header>
   );

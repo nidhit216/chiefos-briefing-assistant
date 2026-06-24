@@ -76,6 +76,8 @@ The AI does **not** have access to full email bodies, attachments, or historical
 2. **Dashboard** — Today's brief, upcoming meetings, recent emails, personal notes
 3. **Notes** — Full note management (create, view, delete, tag)
 4. **Brief History** — View all past generated briefs
+5. **Search** — Semantic search across all data with vector similarity scores
+6. **Chat** — Conversational AI assistant grounded in your actual data via RAG
 
 ---
 
@@ -84,8 +86,9 @@ The AI does **not** have access to full email bodies, attachments, or historical
 - All data is stored in **your own PostgreSQL database** (self-hosted)
 - Google tokens are stored locally for API access
 - Email content beyond snippets is never stored
-- No data is sent to third parties except the AI provider (Groq/OpenAI) for brief generation
+- No data is sent to third parties except the AI provider (Groq/OpenAI) for brief generation and OpenAI for embeddings
 - The AI only sees metadata + snippets, never full email bodies
+- Vector embeddings are stored locally in pgvector — no external vector DB
 
 ---
 
@@ -96,17 +99,24 @@ The AI does **not** have access to full email bodies, attachments, or historical
 ```
 ┌──────────────────┐     ┌──────────────────┐     ┌──────────────────┐
 │   Next.js 14     │────▶│   FastAPI         │────▶│  PostgreSQL 16   │
-│   (Port 3001)    │◀────│   (Port 8000)     │◀────│  (Port 5433)     │
-│   TypeScript     │     │   Python 3.12     │     │  Alpine           │
+│   (Port 3001)    │◀────│   (Port 8000)     │◀────│  + pgvector      │
+│   TypeScript     │     │   Python 3.12     │     │  (Port 5433)     │
 │   Tailwind CSS   │     │   SQLAlchemy 2.x  │     │                  │
 └──────────────────┘     └───────┬───────────┘     └──────────────────┘
                                  │
-                    ┌────────────┼────────────┐
-                    ▼            ▼            ▼
-              ┌──────────┐ ┌──────────┐ ┌──────────┐
-              │ Gmail API│ │Calendar  │ │ Groq/    │
-              │          │ │   API    │ │ OpenAI   │
-              └──────────┘ └──────────┘ └──────────┘
+                    ┌────────────┼────────────────────────┐
+                    ▼            ▼            ▼           ▼
+              ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐
+              │ Gmail API│ │Calendar  │ │ Groq/    │ │ OpenAI   │
+              │          │ │   API    │ │ OpenAI   │ │Embeddings│
+              └──────────┘ └──────────┘ └──────────┘ └──────────┘
+                                              │
+                                    ┌─────────┴─────────┐
+                                    ▼                   ▼
+                              ┌──────────┐       ┌──────────┐
+                              │MCP Server│       │MCP Client│
+                              │ (stdio)  │       │(external)│
+                              └──────────┘       └──────────┘
 ```
 
 ---
@@ -121,12 +131,14 @@ The AI does **not** have access to full email bodies, attachments, or historical
 | Backend | FastAPI | 0.115.0 |
 | Backend Language | Python | 3.12 |
 | ORM | SQLAlchemy (async) | 2.0.35 |
-| Database | PostgreSQL | 16 (Alpine) |
+| Database | PostgreSQL + pgvector | 16 |
 | DB Driver | asyncpg | 0.29.0 |
+| Vector Store | pgvector | 0.3.5 |
 | Migrations | Alembic | 1.13.2 |
 | Auth | Google OAuth 2.0 + JWT (python-jose) | — |
 | HTTP Client | httpx | 0.27.2 |
 | AI SDK | openai (Python) | 1.51.0 |
+| MCP | mcp (Python SDK) | 1.9.0 |
 | Email Delivery | Resend | 2.4.0 |
 | Containerization | Docker Compose | — |
 | Scheduling | APScheduler | 3.10.4 |
@@ -142,6 +154,10 @@ The AI does **not** have access to full email bodies, attachments, or historical
 | Base URL | `https://api.groq.com/openai/v1` |
 | Temperature | 0.7 |
 | Response format | JSON mode enforced |
+| Embedding Model | `text-embedding-3-small` (1536 dimensions) |
+| Embedding Provider | OpenAI |
+| Vector DB | pgvector (PostgreSQL extension) |
+| Agent Pattern | ReAct (Reasoning + Acting) with tool calling |
 | Fallback options | OpenAI (`gpt-4o`), Ollama (local `llama3`) |
 
 **Switchable providers** — change `AI_BASE_URL` and `AI_MODEL` in `.env`:
@@ -167,20 +183,30 @@ The AI does **not** have access to full email bodies, attachments, or historical
 | POST | `/notes/` | Creates a new note |
 | GET | `/notes/` | Lists all user notes |
 | DELETE | `/notes/{id}` | Deletes a note |
-| POST | `/briefs/generate` | Generates AI daily brief |
+| POST | `/briefs/generate` | Generates AI daily brief (supports `?mode=agent\|simple`) |
 | GET | `/briefs/` | Lists last 30 briefs |
 | GET | `/briefs/today` | Returns today's most recent brief |
-| GET | `/health` | Health check |
+| GET | `/search/` | Semantic search across all data (`?q=...&source_type=...`) |
+| POST | `/search/embed` | Embed all user data into vector store |
+| POST | `/chat/` | Send message to RAG-powered chat assistant |
+| GET | `/chat/history` | Get chat history (by session or list sessions) |
+| POST | `/mcp/register` | Register an external MCP server |
+| GET | `/mcp/servers` | List registered MCP servers |
+| GET | `/mcp/servers/{name}/tools` | List tools from an MCP server |
+| POST | `/mcp/servers/{name}/call` | Call a tool on an MCP server |
+| GET | `/health` | Health check (includes feature flags) |
 
 ---
 
-### Database Schema (5 tables)
+### Database Schema (7 tables)
 
 **users** — Google OAuth identity + tokens  
 **emails** — Synced email metadata (sender, subject, snippet) + archived flag  
 **calendar_events** — Synced events (title, description, times, attendees) + archived flag  
 **notes** — User-created notes (title, content, tags with PostgreSQL ARRAY type)  
-**daily_briefs** — Generated AI briefs (JSON content blob, keyed by date)
+**daily_briefs** — Generated AI briefs (JSON content blob, keyed by date)  
+**document_embeddings** — Vector embeddings for RAG (1536-dim pgvector, source type/ID, content text)  
+**chat_messages** — Conversational chat history (session-based, role + content)
 
 All tables use **UUID** primary keys and **timezone-aware timestamps**.
 
@@ -269,3 +295,123 @@ GET /calendar/v3/calendars/primary/events
 - **Behavior:** Archived items are excluded from all GET queries via `WHERE archived = false`
 - **Persistence:** Archiving is permanent per item — re-syncing skips already-stored messages (by unique Google ID), so archived items remain hidden
 - **Scope:** Local only — does not modify Gmail or Google Calendar
+
+---
+
+### RAG (Retrieval Augmented Generation)
+
+**How it works:**
+1. User clicks "Re-embed all data" on the Search page (or `POST /search/embed`)
+2. All emails, notes, and calendar events are converted to text
+3. Each text chunk is sent to OpenAI's `text-embedding-3-small` model → 1536-dim vector
+4. Vectors are stored in pgvector alongside the original text
+5. On search/chat, the query is embedded and compared via cosine similarity
+
+**Vector Search:**
+- Uses pgvector's `<=>` cosine distance operator
+- Filters by user_id (data isolation) and optional source_type
+- Returns results ranked by similarity score (0–1)
+
+**Used by:**
+- Semantic Search page (`/search/`)
+- Chat interface (automatic context retrieval)
+- Agent brief generation (tool: search_emails, search_notes, search_calendar)
+
+---
+
+### Agent-Based Brief Generation
+
+**Pattern:** ReAct (Reasoning + Acting) with OpenAI-compatible function calling
+
+**How it differs from simple generation:**
+- **Simple mode:** Gathers last 20 emails + next 10 events + last 10 notes → single LLM prompt → JSON brief
+- **Agent mode:** LLM decides what data to gather, calls tools iteratively, then produces the final brief
+
+**Available tools for the agent:**
+| Tool | Description |
+|------|-------------|
+| `search_emails` | Semantic search in emails (RAG) |
+| `search_calendar` | Semantic search in calendar events (RAG) |
+| `search_notes` | Semantic search in notes (RAG) |
+| `get_upcoming_events` | Retrieve next N calendar events |
+| `get_recent_emails` | Retrieve N most recent emails |
+| `get_all_notes` | Retrieve all user notes |
+
+**Agent loop:**
+1. System prompt describes the task + available tools
+2. LLM decides which tools to call (may call multiple per iteration)
+3. Tool results are appended to context
+4. Repeat up to 5 iterations
+5. Final response is parsed as JSON brief
+
+---
+
+### MCP Server (Model Context Protocol)
+
+ChiefOS exposes an MCP server over stdio, allowing external AI tools (Claude Desktop, Cursor, VS Code Copilot) to query your data.
+
+**Available MCP tools:**
+
+| Tool | Input | Output |
+|------|-------|--------|
+| `get_todays_brief` | user_email | Today's structured brief JSON |
+| `search_emails` | user_email, query, limit | Semantic search results |
+| `search_notes` | user_email, query, limit | Semantic search results |
+| `get_upcoming_events` | user_email, limit | Upcoming events list |
+| `get_notes` | user_email | All user notes |
+| `get_recent_emails` | user_email, limit | Recent emails list |
+
+**Running the MCP server:**
+```bash
+cd backend && python -m app.mcp_server
+```
+
+**Connecting from Claude/Cursor:**
+```json
+{
+  "mcpServers": {
+    "chiefos": {
+      "command": "python",
+      "args": ["-m", "app.mcp_server"],
+      "cwd": "/path/to/briefing-assistant/backend",
+      "env": {
+        "DATABASE_URL": "postgresql+asyncpg://chiefos:chiefos_dev_password@localhost:5433/chiefos"
+      }
+    }
+  }
+}
+```
+
+---
+
+### External MCP Integrations
+
+ChiefOS can connect to external MCP servers as a client to pull data from other tools.
+
+**Supported pattern:**
+1. Register external MCP server via API (`POST /mcp/register`)
+2. List available tools from that server (`GET /mcp/servers/{name}/tools`)
+3. Call tools on that server (`POST /mcp/servers/{name}/call`)
+
+**Example integrations:**
+- **Jira MCP** — Pull assigned tickets and sprint status into briefs
+- **Slack MCP** — Get unread messages and channel highlights
+- **Notion MCP** — Pull documents and databases for context
+- **Linear MCP** — Get engineering tickets and deadlines
+
+---
+
+### Chat System
+
+**Architecture:**
+- User sends message → RAG retrieves relevant context → LLM generates response
+- Session-based: messages are grouped by `session_id` for multi-turn conversations
+- Today's brief is included as additional context
+- Up to 20 messages of history maintained per session
+
+**What the AI sees per message:**
+1. System prompt (role definition, today's date, user name)
+2. RAG context (top 5 most similar documents to the user's question)
+3. Today's brief (if available)
+4. Conversation history (up to 20 prior messages)
+5. User's current message

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -8,16 +8,21 @@ from app.models.user import User
 from app.models.daily_brief import DailyBrief
 from app.schemas.daily_brief import DailyBriefRead
 from app.services.planner import generate_brief
+from app.services.agent import generate_brief_with_agent
 
 router = APIRouter()
 
 
 @router.post("/generate", response_model=DailyBriefRead)
 async def generate_daily_brief(
+    mode: str = Query("agent", description="Generation mode: 'simple' (single prompt) or 'agent' (tool-calling agent)"),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    brief = await generate_brief(user, db)
+    if mode == "agent":
+        brief = await generate_brief_with_agent(user, db)
+    else:
+        brief = await generate_brief(user, db)
     return brief
 
 

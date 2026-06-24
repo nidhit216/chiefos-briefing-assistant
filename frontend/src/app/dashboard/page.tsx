@@ -29,6 +29,7 @@ export default function DashboardPage() {
   const [syncingCalendar, setSyncingCalendar] = useState(false);
   const [refreshingNotes, setRefreshingNotes] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  const [briefMode, setBriefMode] = useState<"agent" | "simple">("agent");
 
   const archiveEmail = useCallback(async (id: string) => {
     await apiFetch(`/emails/${id}/archive`, { method: "POST" });
@@ -106,46 +107,57 @@ export default function DashboardPage() {
             <h2 className="text-xl font-semibold text-gray-900">
               Today&apos;s Brief
             </h2>
-            <button
-              onClick={async () => {
-                setError(null);
-                setGenerating(true);
-                try {
-                  const res = await apiFetch("/briefs/generate", {
-                    method: "POST",
-                  });
-                  if (res.ok) {
-                    const data: DailyBrief = await res.json();
-                    const parsed = JSON.parse(data.content);
-                    setBrief({
-                      priorities: parsed.priorities || [],
-                      focus_areas: parsed.focus_areas || [],
-                      time_critical: parsed.time_critical || [],
-                      coming_soon: parsed.coming_soon || [],
+            <div className="flex items-center gap-2">
+              <select
+                value={briefMode}
+                onChange={(e) => setBriefMode(e.target.value as "agent" | "simple")}
+                className="text-xs border border-gray-200 rounded-md px-2 py-1 text-gray-600"
+                title="Brief generation mode"
+              >
+                <option value="agent">Agent (RAG)</option>
+                <option value="simple">Simple</option>
+              </select>
+              <button
+                onClick={async () => {
+                  setError(null);
+                  setGenerating(true);
+                  try {
+                    const res = await apiFetch(`/briefs/generate?mode=${briefMode}`, {
+                      method: "POST",
                     });
-                  } else {
-                    const err = await res.json().catch(() => null);
+                    if (res.ok) {
+                      const data: DailyBrief = await res.json();
+                      const parsed = JSON.parse(data.content);
+                      setBrief({
+                        priorities: parsed.priorities || [],
+                        focus_areas: parsed.focus_areas || [],
+                        time_critical: parsed.time_critical || [],
+                        coming_soon: parsed.coming_soon || [],
+                      });
+                    } else {
+                      const err = await res.json().catch(() => null);
+                      setError(
+                        err?.detail ||
+                          `Something went wrong (${res.status}). Please try again.`
+                      );
+                    }
+                  } catch (_) {
                     setError(
-                      err?.detail ||
-                        `Something went wrong (${res.status}). Please try again.`
+                      "Could not reach the server. Please check that the backend is running."
                     );
+                  } finally {
+                    setGenerating(false);
                   }
-                } catch (_) {
-                  setError(
-                    "Could not reach the server. Please check that the backend is running."
-                  );
-                } finally {
-                  setGenerating(false);
-                }
-              }}
-              disabled={generating}
-              className="p-2 text-gray-500 hover:text-primary-600 hover:bg-gray-100 rounded-md transition-colors disabled:opacity-50"
-              title="Generate / Regenerate brief"
-            >
-              <svg className={`w-5 h-5 ${generating ? "animate-spin" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-              </svg>
-            </button>
+                }}
+                disabled={generating}
+                className="p-2 text-gray-500 hover:text-primary-600 hover:bg-gray-100 rounded-md transition-colors disabled:opacity-50"
+                title="Generate / Regenerate brief"
+              >
+                <svg className={`w-5 h-5 ${generating ? "animate-spin" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+              </button>
+            </div>
           </div>
           {brief ? (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

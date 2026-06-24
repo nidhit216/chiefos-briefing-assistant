@@ -46,3 +46,23 @@ export interface DailyBrief {
   content: string;
   created_at: string;
 }
+
+export interface SearchResult {
+  id: string;
+  source_type: string;
+  source_id: string;
+  content: string;
+  similarity: number;
+}
+
+export interface ChatMessage {
+  role: "user" | "assistant";
+  content: string;
+  created_at?: string;
+}
+
+export interface ChatResponse {
+  reply: string;
+  session_id: string;
+  sources_used: number;
+}

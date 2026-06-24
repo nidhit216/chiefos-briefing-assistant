@@ -1,6 +1,6 @@
 services:
   db:
-    image: postgres:16-alpine
+    image: pgvector/pgvector:pg16
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-chiefos}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-chiefos_dev_password}
@@ -27,6 +27,8 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       AI_BASE_URL: ${AI_BASE_URL:-https://api.groq.com/openai/v1}
       AI_MODEL: ${AI_MODEL:-llama-3.1-70b-versatile}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-text-embedding-3-small}
+      EMBEDDING_BASE_URL: ${EMBEDDING_BASE_URL:-}
       RESEND_API_KEY: ${RESEND_API_KEY}
       FROM_EMAIL: ${FROM_EMAIL:-briefs@yourdomain.com}
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3001}

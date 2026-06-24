@@ -20,6 +20,10 @@ docker compose exec backend alembic upgrade head
 # 4. Access
 # Frontend: http://localhost:3001
 # Backend API: http://localhost:8000/docs
+
+# 5. After syncing data, embed it for RAG features
+# (Click "Re-embed all data" on the Search page, or:)
+# curl -X POST http://localhost:8000/search/embed -H "Authorization: Bearer <token>"
 ```
 
 ## Environment Setup
@@ -38,6 +42,8 @@ Optional:
 |----------|---------|
 | `AI_BASE_URL` | Default: `https://api.groq.com/openai/v1`. Remove for OpenAI. |
 | `AI_MODEL` | Default: `openai/gpt-oss-120b`. Use `gpt-4o` for OpenAI. |
+| `EMBEDDING_MODEL` | Default: `text-embedding-3-small`. Used for RAG embeddings. |
+| `EMBEDDING_BASE_URL` | Default: OpenAI. Set if using a different embedding provider. |
 | `RESEND_API_KEY` | Only needed for email delivery of briefs |
 
 ### Google OAuth Setup
@@ -50,10 +56,18 @@ Optional:
 ## Architecture
 
 ```
-├── backend/          # FastAPI + SQLAlchemy + PostgreSQL
-├── frontend/         # Next.js 14 + TypeScript + Tailwind
+├── backend/
+│   ├── app/
+│   │   ├── models/       # SQLAlchemy models (7 tables incl. embeddings + chat)
+│   │   ├── routers/      # API endpoints (auth, emails, calendar, notes, briefs, search, chat, mcp)
+│   │   ├── services/     # Business logic (rag, agent, planner, gmail, calendar, mcp_integrations)
+│   │   └── mcp_server.py # MCP server (stdio) for external AI tools
+│   └── alembic/          # Database migrations
+├── frontend/
+│   └── src/app/          # Next.js pages (dashboard, search, chat, notes, briefs, login)
 ├── docker-compose.yml
-└── prompt.txt        # Product specification
+├── mcp-config.json       # MCP server config for Claude/Cursor
+└── prompt.txt            # Product specification
 ```
 
 ## Tech Stack
@@ -62,21 +76,104 @@ Optional:
 |-------|-----------|
 | Frontend | Next.js 14, TypeScript, Tailwind CSS |
 | Backend | FastAPI, Python 3.12, SQLAlchemy 2.x |
-| Database | PostgreSQL 16 |
+| Database | PostgreSQL 16 + pgvector |
 | Auth | Google OAuth 2.0 + JWT |
-| AI | Groq (openai/gpt-oss-120b) — switchable to OpenAI or Ollama |
+| AI | Groq / OpenAI — switchable via env vars |
+| RAG | pgvector embeddings + OpenAI text-embedding-3-small |
+| Agent | ReAct-style tool-calling agent for brief generation |
+| MCP | Model Context Protocol server + client |
 | Email | Resend |
 | Containers | Docker Compose |
 
 ## Features
 
-- **AI Daily Brief** — Generates structured briefings with 4 sections: Priorities (green), Focus Areas, Time Critical (with dates), Coming Soon (with dates)
-- **Gmail Sync** — Pulls from Primary and Updates categories only (excludes Promotions/Social/Forums)
+### Core
+- **AI Daily Brief** — Generates structured briefings with 4 sections: Priorities, Focus Areas, Time Critical, Coming Soon
+- **Gmail Sync** — Pulls from Primary and Updates categories only
 - **Calendar Sync** — Shows multi-day event ranges, handles all-day events
-- **Archive System** — Hide emails/events from dashboard without affecting Gmail/Calendar (persists across re-syncs)
+- **Archive System** — Hide emails/events from dashboard without affecting Gmail/Calendar
 - **Toast Notifications** — Visual feedback on sync completion
-- **Shared Navigation** — Consistent header with clickable app name across all screens
-- **Graceful Error Handling** — Human-readable error messages for AI failures, network issues, auth problems
+- **Shared Navigation** — Consistent header across all screens
+
+### AI Features (RAG + LLM + MCP)
+- **Semantic Search (RAG)** — Vector-based search across all your data using pgvector. Finds relevant emails, notes, and events by meaning, not keywords.
+- **Chat with your Data** — Conversational AI interface grounded in your actual data via RAG. Ask follow-up questions, get context-aware answers.
+- **Agent-Based Brief Generation** — ReAct-style agent that dynamically calls tools (search emails, check calendar, query notes) before generating your brief. Smarter than a single prompt.
+- **MCP Server** — Exposes your ChiefOS data as MCP tools. Any MCP-compatible AI (Claude, Cursor, etc.) can query your calendar, emails, notes, and briefs.
+- **External MCP Integrations** — Connect to external MCP servers (Jira, Slack, Notion) to pull additional context into your briefs.
+- **Embedding Pipeline** — One-click embedding of all user data into the vector store for RAG-powered features.
+
+## AI Architecture
+
+```
+┌────────────────────────────────────────────────────────────────┐
+│                         ChiefOS                                 │
+├────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  ┌──────────┐   ┌──────────┐   ┌───────────────┐              │
+│  │  Gmail   │   │ Calendar │   │  Personal     │              │
+│  │  Sync    │   │  Sync    │   │  Notes        │              │
+│  └────┬─────┘   └────┬─────┘   └───────┬───────┘              │
+│       │               │                 │                       │
+│       ▼               ▼                 ▼                       │
+│  ┌─────────────────────────────────────────┐                   │
+│  │         Embedding Pipeline              │                   │
+│  │    (OpenAI text-embedding-3-small)      │                   │
+│  └────────────────────┬────────────────────┘                   │
+│                       │                                         │
+│                       ▼                                         │
+│  ┌─────────────────────────────────────────┐                   │
+│  │          pgvector (PostgreSQL)           │                   │
+│  │        Vector similarity search          │                   │
+│  └────────────────────┬────────────────────┘                   │
+│                       │                                         │
+│          ┌────────────┼────────────┐                           │
+│          ▼            ▼            ▼                           │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐                    │
+│  │ Semantic │  │   Chat   │  │  Agent   │                    │
+│  │  Search  │  │  (RAG)   │  │  Brief   │                    │
+│  └──────────┘  └──────────┘  └────┬─────┘                    │
+│                                    │                           │
+│                              ┌─────┴─────┐                    │
+│                              │ Tool Calls │                    │
+│                              │ (ReAct)    │                    │
+│                              └───────────┘                    │
+├────────────────────────────────────────────────────────────────┤
+│  MCP Server (stdio)          │  MCP Client                    │
+│  - get_todays_brief          │  - Connect to Jira MCP         │
+│  - search_emails             │  - Connect to Slack MCP        │
+│  - get_upcoming_events       │  - Connect to Notion MCP       │
+│  - get_notes                 │  - Pull external context       │
+└────────────────────────────────────────────────────────────────┘
+```
+
+## MCP Server Setup
+
+ChiefOS exposes an MCP server so external AI tools can access your data:
+
+```json
+// Add to Claude Desktop / Cursor / VS Code MCP config:
+{
+  "mcpServers": {
+    "chiefos": {
+      "command": "python",
+      "args": ["-m", "app.mcp_server"],
+      "cwd": "/path/to/briefing-assistant/backend",
+      "env": {
+        "DATABASE_URL": "postgresql+asyncpg://chiefos:chiefos_dev_password@localhost:5433/chiefos"
+      }
+    }
+  }
+}
+```
+
+Available MCP tools:
+- `get_todays_brief` — Get today's AI briefing
+- `search_emails` — Semantic search across emails
+- `search_notes` — Semantic search across notes
+- `get_upcoming_events` — Get upcoming calendar events
+- `get_notes` — Get all personal notes
+- `get_recent_emails` — Get most recent emails
 
 ## Development
 
