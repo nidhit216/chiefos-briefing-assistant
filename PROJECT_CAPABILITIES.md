@@ -6,7 +6,7 @@
 
 ChiefOS is an AI-powered personal Chief of Staff that answers one question every morning: **"What should I focus on today?"**
 
-It connects to your Gmail and Google Calendar, combines that with your personal notes, and uses AI to generate an intelligent daily briefing broken into 4 actionable sections.
+It connects to your Gmail and Google Calendar, combines that with your personal notes, and uses AI to generate an intelligent daily briefing: an executive summary, a focus breakdown, urgency-gated attention items, and a time-blocked recommendation plan.
 
 ---
 
@@ -14,12 +14,14 @@ It connects to your Gmail and Google Calendar, combines that with your personal 
 
 When you hit "Generate Brief", the AI reads your recent context and produces:
 
-| Section | Color | Purpose |
-|---------|-------|---------|
-| **Priorities for Today** | 🟢 Green | The 2–4 most important things to tackle today |
-| **Focus Areas** | ⚫ Neutral | Broader themes requiring deep attention |
-| **Time Critical** | 🔴 Maroon | Tasks/events with hard deadlines in the next 1–3 days, with dates |
-| **Coming Soon** | 🔵 Blue | Upcoming items in the next 4–14 days, with tentative dates |
+| Section | Purpose |
+|---------|---------|
+| **Executive Summary** | 2–3 sentence narrative, written like a real Chief of Staff briefing a busy exec — names what today is about and the single most important action |
+| **Focus Breakdown** | Donut chart classifying today's work/meetings into 2–4 life-area labels (e.g. Product, Career, Personal) with percentages |
+| **Attention Required** | Up to 5 genuine exceptions (risks, blockers, overdue items) that pass a strict urgency gate — each shown as a checkable task. Completion state persists across regenerations; an empty list is treated as correct, not a failure |
+| **Recommendations** | A time-blocked plan for the day (morning / afternoon / evening), each entry leading with the single most important thing for that block |
+
+You can leave **feedback** on any past brief (Brief History page) — it's saved as a long-term memory and influences how future briefs are written (e.g. "stop flagging KYC reminders" sticks going forward).
 
 ---
 
@@ -31,6 +33,7 @@ When you hit "Generate Brief", the AI reads your recent context and produces:
 - **Volume:** Up to **50 most recent messages** per sync
 - **What's stored:** Sender name, subject line, message snippet (first ~200 chars), timestamp
 - **What's NOT stored:** Full email body, attachments, BCC/CC info
+- **Low-signal filtering:** Every synced email is classified as low-signal or not — first by regex (no-reply senders, registrar/KYC/e-voting/security-alert subject lines, recruiter platforms), then anything ambiguous goes to an LLM batch classifier. Low-signal emails stay visible in the inbox but are excluded from brief generation context. Classification fails open (treated as NOT low-signal) on AI errors so a transient outage never hides a real email.
 
 #### Calendar Sync
 - **Source:** Your primary Google Calendar
@@ -45,37 +48,45 @@ When you hit "Generate Brief", the AI reads your recent context and produces:
 - **Features:** Title, content, tags (comma-separated)
 - **Included in brief:** Most recent 10 notes (first 200 characters each)
 
+#### Scheduled Background Sync
+- **Off by default** — enable with `SCHEDULED_SYNC_ENABLED=true`
+- When enabled, an APScheduler job re-syncs Gmail + Calendar for **every** registered user on a fixed interval (`SCHEDULED_SYNC_INTERVAL_MINUTES`, default 60), so data is fresh before anyone opens the app
+- Each user gets an isolated DB session per sync step; one user's failure or token refresh never affects another's
+
 ---
 
 ### What The AI Reads When Generating a Brief
 
-At generation time, the AI receives:
+At generation time, the agent pre-fetches this baseline (no tool call needed) and can additionally call semantic-search tools for anything not already covered:
 
 | Data | Amount | Format |
 |------|--------|--------|
-| Your emails | Last 20 synced | "From: [sender] \| Subject: [subject] \| Snippet: [preview]" |
-| Your calendar | Next 10 upcoming events | "[title] at [time] \| Attendees: [emails]" |
-| Your notes | Last 10 updated | "[title]: [first 200 chars]" |
+| Your emails | Last 12 synced, excluding low-signal and archived | "From: [sender] \| Subject: [subject] \| [snippet]" |
+| Your calendar | Next 8 upcoming events, excluding archived | "[title] at [time] \| Attendees: [emails]" |
+| Your notes | Last 10 updated | "[title]: [first 150 chars]" |
+| Your memory | All stored feedback/memories, oldest first | Plain text bullet list |
 
-The AI does **not** have access to full email bodies, attachments, or historical briefs.
+The AI does **not** have access to full email bodies or attachments. It **does** have access to your feedback on past briefs via the memory system, and can call `search_emails` / `search_calendar` / `search_notes` tools mid-generation to dig into a specific topic beyond the baseline.
 
 ---
 
 ### Dashboard Features
 
 - **Refresh buttons** on every section — manually trigger re-sync of emails, calendar, notes, or regenerate the brief
+- **Cancellable generation** — closing the tab or clicking cancel mid-generation aborts the in-flight AI call on the backend, not just the frontend request
+- **Checkable Attention Required tasks** — mark items done directly on the dashboard; completion survives the next brief regeneration (matched by task text, never auto-deleted)
 - **Archive items** — hover over any email or calendar event and click the archive icon. Archived items stay hidden even after re-syncing (they're marked locally, not archived in Gmail/Google Calendar)
-- **Toast notifications** — green confirmation message when sync completes
-- **Consistent navigation** — app title and nav links visible on all screens; "ChiefOS" is clickable and returns to dashboard
+- **Toast notifications** — confirmation message when sync or generation completes
+- **Sidebar navigation** — persistent sidebar with nav links plus a "Connected Apps" panel (Gmail/Calendar active; Slack, Notion, Jira shown as coming soon)
 
 ---
 
 ### Screens
 
 1. **Login** — Google OAuth sign-in (requests Gmail + Calendar read access)
-2. **Dashboard** — Today's brief, upcoming meetings, recent emails, personal notes
+2. **Dashboard** — Today's brief (summary, focus breakdown, attention required, recommendations), upcoming meetings, recent emails, personal notes
 3. **Notes** — Full note management (create, view, delete, tag)
-4. **Brief History** — View all past generated briefs
+4. **Brief History** — View all past generated briefs, delete old ones, and leave feedback that's saved to memory
 5. **Search** — Semantic search across all data with vector similarity scores
 6. **Chat** — Conversational AI assistant grounded in your actual data via RAG
 
@@ -183,9 +194,15 @@ The AI does **not** have access to full email bodies, attachments, or historical
 | POST | `/notes/` | Creates a new note |
 | GET | `/notes/` | Lists all user notes |
 | DELETE | `/notes/{id}` | Deletes a note |
-| POST | `/briefs/generate` | Generates AI daily brief (supports `?mode=agent\|simple`) |
+| POST | `/briefs/generate` | Generates AI daily brief (supports `?mode=agent\|simple`, default `agent`); cancellable on client disconnect |
 | GET | `/briefs/` | Lists last 30 briefs |
 | GET | `/briefs/today` | Returns today's most recent brief |
+| DELETE | `/briefs/{id}` | Deletes a brief |
+| GET | `/briefs/tasks` | Lists persisted `attention_required` tasks (`?category=...`), incomplete first |
+| PATCH | `/briefs/tasks/{id}` | Toggles a task's `completed` state |
+| POST | `/briefs/{id}/feedback` | Saves user feedback on a brief as a long-term `Memory` |
+| GET | `/memory/` | Lists all stored memories |
+| DELETE | `/memory/{id}` | Deletes a memory |
 | GET | `/search/` | Semantic search across all data (`?q=...&source_type=...`) |
 | POST | `/search/embed` | Embed all user data into vector store |
 | POST | `/chat/` | Send message to RAG-powered chat assistant |
@@ -198,13 +215,15 @@ The AI does **not** have access to full email bodies, attachments, or historical
 
 ---
 
-### Database Schema (7 tables)
+### Database Schema (9 tables)
 
-**users** — Google OAuth identity + tokens  
-**emails** — Synced email metadata (sender, subject, snippet) + archived flag  
+**users** — Google OAuth identity + tokens (access, refresh, **expiry timestamp**)  
+**emails** — Synced email metadata (sender, subject, snippet) + archived flag + **low_signal flag**  
 **calendar_events** — Synced events (title, description, times, attendees) + archived flag  
 **notes** — User-created notes (title, content, tags with PostgreSQL ARRAY type)  
 **daily_briefs** — Generated AI briefs (JSON content blob, keyed by date)  
+**brief_tasks** — Persisted `attention_required` items (category, task text, completed flag, last_seen_at) — upserted on every brief regeneration so completion state survives, rows never auto-deleted  
+**memories** — Long-term memory entries (content, optional FK back to the brief that prompted them), fed into every future brief generation prompt  
 **document_embeddings** — Vector embeddings for RAG (1536-dim pgvector, source type/ID, content text)  
 **chat_messages** — Conversational chat history (session-based, role + content)
 
@@ -221,12 +240,30 @@ Browser → GET /auth/login
        → Google redirects to GET /auth/callback?code=...
        → Backend exchanges code for tokens
        → Backend fetches user info from Google
-       → Backend upserts user in DB, stores OAuth tokens
+       → Backend upserts user in DB, stores OAuth tokens + computed expiry timestamp
        → Backend creates JWT (python-jose)
        → Redirect to frontend /auth/callback?token=JWT
        → Frontend stores JWT in localStorage
        → All subsequent API calls use Authorization: Bearer <JWT>
 ```
+
+**Token refresh:** Before any Gmail/Calendar API call, `ensure_valid_access_token` checks `google_token_expiry` (with a 2-minute buffer). If expired, it exchanges the stored `google_refresh_token` for a new access token via Google's OAuth endpoint and persists it. If refresh fails or there's no refresh token, the caller skips the sync rather than calling Google with a token known to be dead.
+
+---
+
+### Request Cancellation
+
+Brief generation (and other long-running AI calls) run through `run_cancellable`, which polls `request.is_disconnected()` every 500ms alongside the in-flight task. If the client disconnects (tab closed, navigation, explicit cancel), the underlying coroutine is cancelled server-side and a `499` is returned — preventing orphaned LLM calls from running to completion after nobody is waiting on them.
+
+---
+
+### Email Low-Signal Classification
+
+**Pipeline (`email_classifier.py`), run during Gmail sync:**
+1. Regex heuristic checks sender/subject against known noise patterns (no-reply addresses, registrars, e-voting/KYC/security-alert language, recruiter platforms) — free, no AI call
+2. Anything not caught by the heuristic is batched into a single LLM call that classifies each as `low_signal` or not, using an aggressive "when in doubt, mark low_signal" system prompt
+3. Classification fails open on any AI error (empty result = nothing marked low-signal), so a transient outage never hides a real email
+4. Result is stored as a boolean column on the `emails` table; low-signal emails remain visible in the UI but are excluded from brief-generation context (both `planner.py` and `agent.py` filter `low_signal == False`)
 
 ---
 
@@ -324,25 +361,37 @@ GET /calendar/v3/calendars/primary/events
 **Pattern:** ReAct (Reasoning + Acting) with OpenAI-compatible function calling
 
 **How it differs from simple generation:**
-- **Simple mode:** Gathers last 20 emails + next 10 events + last 10 notes → single LLM prompt → JSON brief
-- **Agent mode:** LLM decides what data to gather, calls tools iteratively, then produces the final brief
+- **Simple mode (`planner.py`):** Gathers last 20 emails + next 10 events + last 10 notes + memory → single LLM prompt → JSON brief. No tool calls.
+- **Agent mode (`agent.py`, default):** Pre-fetches the same kind of baseline deterministically in Python (last 12 non-low-signal emails, next 8 events, last 10 notes, memory) and injects it into the system prompt — avoiding a guaranteed extra round-trip for data the agent always needs. The LLM can then call search tools for anything beyond that baseline before producing the final brief.
 
-**Available tools for the agent:**
+**Available tools for the agent (baseline data is pre-fetched, not tool calls):**
 | Tool | Description |
 |------|-------------|
 | `search_emails` | Semantic search in emails (RAG) |
 | `search_calendar` | Semantic search in calendar events (RAG) |
 | `search_notes` | Semantic search in notes (RAG) |
-| `get_upcoming_events` | Retrieve next N calendar events |
-| `get_recent_emails` | Retrieve N most recent emails |
-| `get_all_notes` | Retrieve all user notes |
 
 **Agent loop:**
-1. System prompt describes the task + available tools
-2. LLM decides which tools to call (may call multiple per iteration)
-3. Tool results are appended to context
-4. Repeat up to 5 iterations
-5. Final response is parsed as JSON brief
+1. System prompt includes baseline context (events/emails/notes) + memory + output schema
+2. LLM decides whether to call search tools (only if it needs something beyond baseline)
+3. Tool results are appended to context; capped at 3 iterations
+4. A final tools-free call forces JSON-only output (`executive_summary`, `attention_required`, `recommendations`, `focus_breakdown`) — kept separate from the tool-calling call because some OpenAI-compatible providers (e.g. Groq) hallucinate a fake tool call instead of returning content when both are requested together
+5. On parse failure, falls back to an empty/placeholder brief rather than erroring
+6. `attention_required` items are synced into `brief_tasks` (see below) before the brief is saved
+
+**Output schema:**
+```json
+{
+  "executive_summary": "string",
+  "attention_required": ["<what> — <deadline> — <consequence if ignored>", "..."],
+  "recommendations": {"morning": "...", "afternoon": "...", "evening": "..."},
+  "focus_breakdown": [{"label": "Product", "percent": 70}, ...]
+}
+```
+
+**`attention_required` urgency gate:** an item only qualifies if a named individual is personally waiting on a specific reply/decision AND something concrete and irreversible happens if ignored. Automated platform notices (KYC, e-voting, security alerts, recruiter outreach) are always dropped regardless of how urgent their subject line sounds. Capped at 5 entries, ordered by urgency × impact; an empty list is the correct/expected output when nothing qualifies.
+
+**Task persistence (`brief_tasks.py`):** since each generation produces a fresh JSON blob with no stable item identity, `attention_required` entries are upserted into `BriefTask` rows matched by case-insensitive text. Matching tasks get `last_seen_at` refreshed but `completed` is left untouched; rows are never auto-deleted, so a checked-off task stays checked even if the same issue resurfaces tomorrow.
 
 ---
 

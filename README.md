@@ -45,6 +45,8 @@ Optional:
 | `EMBEDDING_MODEL` | Default: `text-embedding-3-small`. Used for RAG embeddings. |
 | `EMBEDDING_BASE_URL` | Default: OpenAI. Set if using a different embedding provider. |
 | `RESEND_API_KEY` | Only needed for email delivery of briefs |
+| `SCHEDULED_SYNC_ENABLED` | Default: `false`. Set `true` to auto-sync Gmail + Calendar for all users on an interval. |
+| `SCHEDULED_SYNC_INTERVAL_MINUTES` | Default: `60`. Interval for the above. |
 
 ### Google OAuth Setup
 
@@ -58,9 +60,10 @@ Optional:
 ```
 ├── backend/
 │   ├── app/
-│   │   ├── models/       # SQLAlchemy models (7 tables incl. embeddings + chat)
-│   │   ├── routers/      # API endpoints (auth, emails, calendar, notes, briefs, search, chat, mcp)
-│   │   ├── services/     # Business logic (rag, agent, planner, gmail, calendar, mcp_integrations)
+│   │   ├── models/       # SQLAlchemy models (9 tables incl. embeddings, chat, memory, brief_tasks)
+│   │   ├── routers/      # API endpoints (auth, emails, calendar, notes, briefs, search, chat, mcp, memory)
+│   │   ├── services/     # Business logic (rag, agent, planner, gmail, calendar, mcp_integrations,
+│   │   │                 #   email_classifier, brief_tasks, scheduler, google_auth, cancellation)
 │   │   └── mcp_server.py # MCP server (stdio) for external AI tools
 │   └── alembic/          # Database migrations
 ├── frontend/
@@ -88,17 +91,22 @@ Optional:
 ## Features
 
 ### Core
-- **AI Daily Brief** — Generates structured briefings with 4 sections: Priorities, Focus Areas, Time Critical, Coming Soon
+- **AI Daily Brief** — Executive summary, urgency-gated "Attention Required" items (persisted as checkable tasks that survive regeneration), a time-blocked morning/afternoon/evening plan, and a focus-breakdown donut chart of where today's effort goes
+- **Brief Feedback & Memory** — Leave feedback on any past brief; it's stored as a long-term memory and fed into future brief generation so the AI adjusts over time
+- **Low-Signal Email Filtering** — Regex heuristics + an LLM classifier mark noise (KYC reminders, e-voting notices, security alerts, recruiter spam) as low-signal so it's excluded from brief context without deleting it
 - **Gmail Sync** — Pulls from Primary and Updates categories only
 - **Calendar Sync** — Shows multi-day event ranges, handles all-day events
 - **Archive System** — Hide emails/events from dashboard without affecting Gmail/Calendar
-- **Toast Notifications** — Visual feedback on sync completion
-- **Shared Navigation** — Consistent header across all screens
+- **Scheduled Background Sync** — Optional APScheduler job refreshes Gmail + Calendar for every user on an interval (off by default, see `SCHEDULED_SYNC_ENABLED`)
+- **Google Token Auto-Refresh** — Access tokens are refreshed via the stored refresh token before they expire, so syncs don't silently fail
+- **Cancellable Brief Generation** — Closing the tab/navigating away mid-generation cancels the in-flight LLM call server-side instead of leaking it
+- **Toast Notifications** — Visual feedback on sync/generation completion
+- **Sidebar Navigation** — Persistent sidebar with a "Connected Apps" panel (Gmail, Calendar active; Slack/Notion/Jira marked coming soon)
 
 ### AI Features (RAG + LLM + MCP)
 - **Semantic Search (RAG)** — Vector-based search across all your data using pgvector. Finds relevant emails, notes, and events by meaning, not keywords.
 - **Chat with your Data** — Conversational AI interface grounded in your actual data via RAG. Ask follow-up questions, get context-aware answers.
-- **Agent-Based Brief Generation** — ReAct-style agent that dynamically calls tools (search emails, check calendar, query notes) before generating your brief. Smarter than a single prompt.
+- **Agent-Based Brief Generation** — ReAct-style agent that pre-fetches baseline context (emails/events/notes) and can call search tools dynamically before generating your brief. Default mode (`?mode=agent`); a single-prompt `simple` mode is also available.
 - **MCP Server** — Exposes your ChiefOS data as MCP tools. Any MCP-compatible AI (Claude, Cursor, etc.) can query your calendar, emails, notes, and briefs.
 - **External MCP Integrations** — Connect to external MCP servers (Jira, Slack, Notion) to pull additional context into your briefs.
 - **Embedding Pipeline** — One-click embedding of all user data into the vector store for RAG-powered features.
@@ -137,7 +145,13 @@ Optional:
 │                              ┌─────┴─────┐                    │
 │                              │ Tool Calls │                    │
 │                              │ (ReAct)    │                    │
-│                              └───────────┘                    │
+│                              └─────┬─────┘                    │
+│                                    │                           │
+│                      ┌─────────────┴──────────────┐           │
+│                      │ Memory (feedback on past    │           │
+│                      │ briefs) + BriefTask store    │           │
+│                      │ (completion survives regen)  │           │
+│                      └──────────────────────────────┘           │
 ├────────────────────────────────────────────────────────────────┤
 │  MCP Server (stdio)          │  MCP Client                    │
 │  - get_todays_brief          │  - Connect to Jira MCP         │
@@ -202,16 +216,21 @@ Each test creates and tears down its own user (and any related notes/events/emai
 
 | Test file | Covers |
 |-----------|--------|
-| `test_auth.py` | Login redirect, OAuth callback (new/existing user, failure paths), `/auth/me`, JWT edge cases |
-| `test_briefs.py` | Brief list/today endpoints, generation mode fallback |
+| `test_auth.py` | Login redirect, OAuth callback (new/existing user, failure paths), token expiry persistence, `/auth/me`, JWT edge cases |
+| `test_google_auth.py` | Access token refresh (expired/near-expiry/no-refresh-token paths) |
+| `test_briefs.py` | Brief list/today/delete endpoints, generation mode fallback |
+| `test_agent.py` | Agent-mode brief generation (baseline context, tool calls, JSON parsing fallback) |
+| `test_brief_tasks.py` / `test_brief_generation_tasks.py` | BriefTask upsert-on-regenerate semantics, completion toggling, task list endpoint |
+| `test_memory.py` | Brief feedback → memory persistence, memory list/delete |
 | `test_calendar.py` / `test_calendar_service.py` | Calendar router (list/archive/sync) and Google Calendar event parsing/dedup |
-| `test_emails.py` / `test_gmail_service.py` | Email router and Gmail sync parsing/dedup |
+| `test_emails.py` / `test_gmail_service.py` | Email router, Gmail sync parsing/dedup, low-signal classification |
 | `test_notes.py` | Notes CRUD, AI tag generation/merge, due dates, tag/date filters |
 | `test_chat.py` | Chat sessions, history, RAG context injection |
 | `test_search.py` | Semantic search and embedding endpoints |
 | `test_mcp.py` | External MCP server registration/tool calls |
 | `test_rag.py` | Vector similarity search against real pgvector (regression coverage for the `embedding <=> :param::vector` SQL cast bug) |
 | `test_cancellation.py` / `test_cancellation_integration.py` | Stop/cancel behavior for brief generation and calendar/email sync |
+| `test_scheduler.py` | Scheduled background sync job (interval registration, per-user failure isolation) |
 | `test_ai_client.py` | Shared OpenAI client config and AI tag-suggestion helper |
 
 ## Troubleshooting
