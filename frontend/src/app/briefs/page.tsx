@@ -36,10 +36,10 @@ export default function BriefsPage() {
   function selectBrief(brief: DailyBrief) {
     const parsed = JSON.parse(brief.content);
     setSelected({
-      priorities: parsed.priorities || [],
-      focus_areas: parsed.focus_areas || [],
-      time_critical: parsed.time_critical || [],
-      coming_soon: parsed.coming_soon || [],
+      executive_summary: parsed.executive_summary || "",
+      attention_required: parsed.attention_required || [],
+      recommendations: parsed.recommendations || {},
+      focus_breakdown: parsed.focus_breakdown || [],
     });
     setSelectedBriefId(brief.id);
     setFeedback("");
@@ -74,11 +74,11 @@ export default function BriefsPage() {
 
   return (
     <PageShell maxWidth="max-w-4xl">
-      <h2 className="text-2xl font-bold text-gray-900 mb-6">Brief History</h2>
+      <h2 className="font-serif text-3xl text-ink mb-6">Brief History</h2>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {error && (
-          <div className="md:col-span-3 rounded-lg border border-red-200 bg-red-50 p-4">
+          <div className="md:col-span-3 rounded-md border border-red-200 bg-red-50 p-4">
             <div className="flex items-start gap-3">
               <span className="text-red-500 text-lg">⚠️</span>
               <div>
@@ -92,14 +92,14 @@ export default function BriefsPage() {
           {briefs.map((brief) => (
             <div
               key={brief.id}
-              className={`group w-full text-left bg-white rounded-lg shadow p-3 flex items-start justify-between gap-2 cursor-pointer hover:ring-2 hover:ring-primary-500 ${
+              className={`group w-full text-left bg-cream-50 border border-ink/10 rounded-md p-3 flex items-start justify-between gap-2 cursor-pointer hover:ring-2 hover:ring-primary-500 ${
                 selectedBriefId === brief.id ? "ring-2 ring-primary-500" : ""
               }`}
               onClick={() => selectBrief(brief)}
             >
               <div>
-                <p className="font-medium text-gray-900">{brief.brief_date}</p>
-                <p className="text-xs text-gray-500">
+                <p className="font-medium text-ink">{brief.brief_date}</p>
+                <p className="font-mono text-xs text-ink-muted">
                   {new Date(brief.created_at).toLocaleString()}
                 </p>
               </div>
@@ -108,7 +108,7 @@ export default function BriefsPage() {
                   e.stopPropagation();
                   deleteBrief(brief.id);
                 }}
-                className="opacity-0 group-hover:opacity-100 p-1 text-gray-400 hover:text-red-500 transition-opacity flex-shrink-0"
+                className="opacity-0 group-hover:opacity-100 p-1 text-ink-muted/70 hover:text-red-500 transition-opacity flex-shrink-0"
                 title="Delete brief"
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -118,55 +118,52 @@ export default function BriefsPage() {
             </div>
           ))}
           {briefs.length === 0 && (
-            <p className="text-gray-500">No briefs generated yet.</p>
+            <p className="text-ink-muted">No briefs generated yet.</p>
           )}
         </div>
 
         <div className="md:col-span-2">
           {selected ? (
-            <div className="bg-white rounded-xl shadow p-6 space-y-4">
-              <div>
-                <h3 className="font-medium text-green-700 mb-1">Priorities for Today</h3>
-                <ul className="space-y-1">
-                  {selected.priorities.map((p, i) => (
-                    <li key={i} className="text-green-700">{p}</li>
-                  ))}
-                </ul>
-              </div>
-              <div>
-                <h3 className="font-medium text-gray-900 mb-1">Focus Areas</h3>
-                <ul className="space-y-1">
-                  {selected.focus_areas.map((f, i) => (
-                    <li key={i} className="text-gray-600">{f}</li>
-                  ))}
-                </ul>
-              </div>
-              <div>
-                <h3 className="font-medium text-rose-900 mb-1">Time Critical</h3>
-                <ul className="space-y-1">
-                  {selected.time_critical.map((item, i) => (
-                    <li key={i} className="text-rose-900 flex justify-between">
-                      <span>{item.task}</span>
-                      <span className="text-xs bg-rose-100 text-rose-800 px-2 py-0.5 rounded">{item.date}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-              <div>
-                <h3 className="font-medium text-gray-900 mb-1">Coming Soon</h3>
-                <ul className="space-y-1">
-                  {selected.coming_soon.map((item, i) => (
-                    <li key={i} className="text-gray-600 flex justify-between">
-                      <span>{item.task}</span>
-                      <span className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded">{item.date}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
+            <div className="bg-cream-50 border border-ink/10 rounded-md p-6 space-y-4">
+              {selected.executive_summary && (
+                <div>
+                  <h3 className="font-medium text-ink mb-1">Executive Summary</h3>
+                  <p className="text-ink leading-relaxed">{selected.executive_summary}</p>
+                </div>
+              )}
+              {selected.attention_required.length > 0 && (
+                <div>
+                  <h3 className="font-medium text-amber-800 mb-1 flex items-center gap-1.5">
+                    <span aria-hidden>⚠️</span> Attention Required
+                  </h3>
+                  <ul className="space-y-1">
+                    {selected.attention_required.map((a, i) => (
+                      <li key={i} className="text-amber-900">{a}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {(selected.recommendations.morning || selected.recommendations.afternoon || selected.recommendations.evening) && (
+                <div>
+                  <h3 className="font-medium text-ink mb-1">Recommended Schedule</h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    {(["morning", "afternoon", "evening"] as const)
+                      .filter((slot) => selected.recommendations[slot])
+                      .map((slot) => (
+                        <div key={slot}>
+                          <p className="font-mono text-[10px] font-medium text-ink-muted uppercase tracking-widest mb-1">
+                            {slot}
+                          </p>
+                          <p className="text-sm text-ink">{selected.recommendations[slot]}</p>
+                        </div>
+                      ))}
+                  </div>
+                </div>
+              )}
 
-              <div className="border-t border-gray-100 pt-4">
-                <h3 className="font-medium text-gray-900 mb-1">Give feedback on this brief</h3>
-                <p className="text-xs text-gray-500 mb-2">
+              <div className="border-t border-ink/10 pt-4">
+                <h3 className="font-medium text-ink mb-1">Give feedback on this brief</h3>
+                <p className="text-xs text-ink-muted mb-2">
                   ChiefOS will remember this and take it into account in future briefs.
                 </p>
                 <textarea
@@ -176,14 +173,14 @@ export default function BriefsPage() {
                     setFeedbackSent(false);
                   }}
                   placeholder="e.g. Don't include focus areas about email cleanup."
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  className="w-full border border-ink/20 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
                   rows={2}
                 />
                 <div className="flex items-center gap-3 mt-2">
                   <button
                     onClick={submitFeedback}
                     disabled={submittingFeedback || !feedback.trim()}
-                    className="bg-primary-600 text-white text-sm px-4 py-2 rounded-lg hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="bg-primary-600 text-white text-sm px-4 py-2 rounded-md hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {submittingFeedback ? "Saving..." : "Send feedback"}
                   </button>
@@ -194,8 +191,8 @@ export default function BriefsPage() {
               </div>
             </div>
           ) : (
-            <div className="bg-white rounded-xl shadow p-6 flex items-center justify-center min-h-[200px]">
-              <p className="text-gray-400">Select a brief to view details</p>
+            <div className="bg-cream-50 border border-ink/10 rounded-md p-6 flex items-center justify-center min-h-[200px]">
+              <p className="text-ink-muted/70">Select a brief to view details</p>
             </div>
           )}
         </div>

@@ -3,16 +3,19 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 export default function LoginPage() {
   return (
     <main className="flex min-h-screen flex-col items-center justify-center p-8">
-      <div className="w-full max-w-md bg-white rounded-xl shadow-lg p-8">
-        <h1 className="text-3xl font-bold text-center text-gray-900 mb-2">
-          Welcome to ChiefOS
+      <div className="w-full max-w-md">
+        <p className="text-center font-mono text-xs uppercase tracking-widest text-ink-muted mb-3">
+          Office of the CEO
+        </p>
+        <h1 className="font-serif text-4xl text-center text-ink mb-2">
+          ChiefOS
         </h1>
-        <p className="text-center text-gray-500 mb-8">
+        <p className="text-center text-ink-muted mb-10">
           Sign in with your Google account to get started
         </p>
         <a
           href={`${API_URL}/auth/login`}
-          className="flex items-center justify-center w-full bg-white border border-gray-300 rounded-lg px-6 py-3 text-gray-700 font-medium hover:bg-gray-50 transition-colors"
+          className="flex items-center justify-center w-full bg-cream-50 border border-ink/15 rounded-md px-6 py-3 text-ink font-medium hover:bg-cream-200 hover:border-ink/25 transition-colors"
         >
           <svg className="w-5 h-5 mr-3" viewBox="0 0 24 24">
             <path

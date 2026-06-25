@@ -73,17 +73,17 @@ export default function SearchPage() {
       {toast && <Toast message={toast} onClose={() => setToast(null)} />}
 
       <div className="flex items-center justify-between mb-4">
-        <h1 className="text-2xl font-bold text-gray-900">Semantic Search</h1>
+        <h1 className="font-serif text-3xl text-ink">Semantic Search</h1>
         <button
           onClick={embedData}
           disabled={embedding}
-          className="text-sm bg-purple-100 text-purple-700 px-3 py-1.5 rounded-lg hover:bg-purple-200 disabled:opacity-50 transition-colors"
+          className="text-sm bg-primary-100 text-primary-800 px-3 py-1.5 rounded-md hover:bg-primary-200 disabled:opacity-50 transition-colors"
         >
           {embedding ? "Embedding..." : "Re-embed all data"}
         </button>
       </div>
 
-      <p className="text-sm text-gray-500 mb-6">
+      <p className="text-sm text-ink-muted mb-6">
         Search across your emails, notes, and calendar using natural language. Results are ranked by relevance using vector similarity.
       </p>
 
@@ -95,12 +95,12 @@ export default function SearchPage() {
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && search()}
           placeholder="Search your data semantically..."
-          className="flex-1 border border-gray-300 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+          className="flex-1 border border-ink/20 rounded-md px-4 py-3 focus:outline-none focus:ring-2 focus:ring-primary-600 focus:border-transparent"
         />
         <button
           onClick={search}
           disabled={searching || !query.trim()}
-          className="bg-purple-600 text-white px-6 py-3 rounded-xl hover:bg-purple-700 disabled:opacity-50 transition-colors"
+          className="bg-primary-700 text-white px-6 py-3 rounded-md hover:bg-primary-800 disabled:opacity-50 transition-colors"
         >
           {searching ? "..." : "Search"}
         </button>
@@ -117,10 +117,10 @@ export default function SearchPage() {
           <button
             key={f.value}
             onClick={() => setFilter(f.value)}
-            className={`text-sm px-3 py-1 rounded-lg transition-colors ${
+            className={`text-sm px-3 py-1 rounded-md transition-colors ${
               filter === f.value
-                ? "bg-purple-600 text-white"
-                : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                ? "bg-primary-700 text-white"
+                : "bg-cream-200 text-ink-muted hover:bg-cream-300"
             }`}
           >
             {f.label}
@@ -134,17 +134,17 @@ export default function SearchPage() {
           {results.map((r) => (
             <div
               key={r.id}
-              className="bg-white border border-gray-200 rounded-xl p-4 hover:shadow-md transition-shadow"
+              className="bg-cream-50 border border-ink/10 rounded-md p-4 hover:border-ink/20 transition-shadow"
             >
               <div className="flex items-center justify-between mb-2">
-                <span className="text-sm font-medium text-gray-700">
+                <span className="text-sm font-medium text-ink-muted">
                   {sourceIcon(r.source_type)} {r.source_type.replace("_", " ")}
                 </span>
-                <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded">
+                <span className="font-mono text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded">
                   {Math.round(r.similarity * 100)}% match
                 </span>
               </div>
-              <p className="text-sm text-gray-800 whitespace-pre-line line-clamp-4">
+              <p className="text-sm text-ink whitespace-pre-line line-clamp-4">
                 {r.content}
               </p>
             </div>
@@ -153,7 +153,7 @@ export default function SearchPage() {
       )}
 
       {results.length === 0 && query && !searching && (
-        <p className="text-center text-gray-400 mt-10">
+        <p className="text-center text-ink-muted/70 mt-10">
           No results found. Try embedding your data first.
         </p>
       )}

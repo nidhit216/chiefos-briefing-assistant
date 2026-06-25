@@ -13,21 +13,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.user import User
 from app.models.brief_task import BriefTask
 
-TASK_CATEGORIES = ("priorities", "focus_areas", "attention_required", "time_critical", "coming_soon")
+TASK_CATEGORIES = ("attention_required",)
 
 
 async def sync_brief_tasks(user: User, brief_json: dict, db: AsyncSession) -> None:
     now = datetime.now(timezone.utc)
     for category in TASK_CATEGORIES:
         for item in brief_json.get(category, []):
-            # "priorities"/"focus_areas" items are plain strings; "time_critical"/
-            # "coming_soon" items are {"task": ..., "date": ...} dicts.
-            if isinstance(item, dict):
-                task_text = (item.get("task") or "").strip()
-                date_label = item.get("date")
-            else:
-                task_text = (item or "").strip()
-                date_label = None
+            task_text = (item or "").strip()
             if not task_text:
                 continue
 
@@ -40,13 +33,11 @@ async def sync_brief_tasks(user: User, brief_json: dict, db: AsyncSession) -> No
             )
             existing = result.scalar_one_or_none()
             if existing:
-                existing.date_label = date_label
                 existing.last_seen_at = now
             else:
                 db.add(BriefTask(
                     user_id=user.id,
                     category=category,
                     task=task_text,
-                    date_label=date_label,
                     last_seen_at=now,
                 ))

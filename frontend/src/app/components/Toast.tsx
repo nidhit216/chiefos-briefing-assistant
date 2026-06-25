@@ -17,10 +17,10 @@ export default function Toast({ message, type = "success", onClose }: ToastProps
   return (
     <div className="fixed bottom-6 right-6 z-50 animate-slide-up">
       <div
-        className={`flex items-center gap-2 px-4 py-3 rounded-lg shadow-lg text-sm font-medium ${
+        className={`flex items-center gap-2 px-4 py-3 rounded-md border text-sm font-medium ${
           type === "success"
-            ? "bg-green-600 text-white"
-            : "bg-red-600 text-white"
+            ? "bg-green-700 border-green-800 text-white"
+            : "bg-red-700 border-red-800 text-white"
         }`}
       >
         <span>{type === "success" ? "✓" : "✗"}</span>

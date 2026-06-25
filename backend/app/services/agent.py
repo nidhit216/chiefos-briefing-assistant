@@ -17,13 +17,16 @@ from app.services.brief_tasks import sync_brief_tasks
 
 settings = get_settings()
 
-# Tools the agent can call
+# Tools the agent can call — kept to dynamic semantic search only.
+# Deterministic, always-needed lookups (upcoming events / recent emails / notes)
+# are pre-fetched in Python and injected into the system prompt instead of
+# being tool calls, to avoid an extra round-trip of resent message history.
 AGENT_TOOLS = [
     {
         "type": "function",
         "function": {
             "name": "search_emails",
-            "description": "Search user's emails by semantic query. Use to find specific email threads or topics.",
+            "description": "Search user's emails by semantic query. Use to find specific email threads or topics not already in the provided context.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -64,94 +67,25 @@ AGENT_TOOLS = [
             },
         },
     },
-    {
-        "type": "function",
-        "function": {
-            "name": "get_upcoming_events",
-            "description": "Get the next N upcoming calendar events.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "limit": {"type": "integer", "description": "Number of events to retrieve", "default": 10},
-                },
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "get_recent_emails",
-            "description": "Get the N most recent emails.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "limit": {"type": "integer", "description": "Number of emails to retrieve", "default": 20},
-                },
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "get_all_notes",
-            "description": "Get all user's personal notes.",
-            "parameters": {"type": "object", "properties": {}},
-        },
-    },
 ]
+
+SEARCH_CONTENT_CHAR_CAP = 250  # cap tool-result content so search round-trips stay cheap
 
 
 async def _execute_tool(tool_name: str, args: dict, user: User, db: AsyncSession) -> str:
     """Execute an agent tool and return the result as a string."""
     if tool_name == "search_emails":
         results = await semantic_search(args["query"], user.id, db, source_type="email", limit=args.get("limit", 5))
-        return json.dumps(results, default=str)
-
     elif tool_name == "search_calendar":
         results = await semantic_search(args["query"], user.id, db, source_type="calendar_event", limit=args.get("limit", 5))
-        return json.dumps(results, default=str)
-
     elif tool_name == "search_notes":
         results = await semantic_search(args["query"], user.id, db, source_type="note", limit=args.get("limit", 5))
-        return json.dumps(results, default=str)
+    else:
+        return json.dumps({"error": f"Unknown tool: {tool_name}"})
 
-    elif tool_name == "get_upcoming_events":
-        limit = args.get("limit", 10)
-        result = await db.execute(
-            select(CalendarEvent)
-            .where(CalendarEvent.user_id == user.id)
-            .where(CalendarEvent.start_time >= datetime.now(timezone.utc))
-            .order_by(CalendarEvent.start_time.asc())
-            .limit(limit)
-        )
-        events = result.scalars().all()
-        return json.dumps([
-            {"title": e.title, "start": str(e.start_time), "end": str(e.end_time), "attendees": e.attendees}
-            for e in events
-        ])
-
-    elif tool_name == "get_recent_emails":
-        limit = args.get("limit", 20)
-        result = await db.execute(
-            select(Email).where(Email.user_id == user.id).order_by(Email.received_at.desc()).limit(limit)
-        )
-        emails = result.scalars().all()
-        return json.dumps([
-            {"sender": e.sender, "subject": e.subject, "snippet": e.snippet, "received_at": str(e.received_at)}
-            for e in emails
-        ])
-
-    elif tool_name == "get_all_notes":
-        result = await db.execute(
-            select(Note).where(Note.user_id == user.id).order_by(Note.updated_at.desc())
-        )
-        notes = result.scalars().all()
-        return json.dumps([
-            {"title": n.title, "content": n.content[:300], "tags": n.tags}
-            for n in notes
-        ])
-
-    return json.dumps({"error": f"Unknown tool: {tool_name}"})
+    for r in results:
+        r["content"] = r["content"][:SEARCH_CONTENT_CHAR_CAP]
+    return json.dumps(results, default=str)
 
 
 async def generate_brief_with_agent(user: User, db: AsyncSession) -> DailyBrief:
@@ -164,33 +98,70 @@ async def generate_brief_with_agent(user: User, db: AsyncSession) -> DailyBrief:
     memories = memories_result.scalars().all()
     memory_context = "\n".join(f"- {m.content}" for m in memories) or "Nothing remembered yet."
 
+    # Pre-fetch the always-needed baseline (events, emails, notes) in Python rather
+    # than via tool calls — this is the data the agent needs on every run, and fetching
+    # it deterministically avoids resending tool schemas + growing history for a
+    # guaranteed round-trip. Tool calls remain available for anything beyond this baseline.
+    events_result = await db.execute(
+        select(CalendarEvent)
+        .where(CalendarEvent.user_id == user.id)
+        .where(CalendarEvent.start_time >= datetime.now(timezone.utc))
+        .order_by(CalendarEvent.start_time.asc())
+        .limit(8)
+    )
+    events_context = "\n".join(
+        f"- {e.title} at {e.start_time} | Attendees: {e.attendees}"
+        for e in events_result.scalars().all()
+    ) or "No upcoming events."
+
+    emails_result = await db.execute(
+        select(Email).where(Email.user_id == user.id).order_by(Email.received_at.desc()).limit(12)
+    )
+    emails_context = "\n".join(
+        f"- From: {e.sender} | Subject: {e.subject} | {e.snippet[:150] if e.snippet else ''}"
+        for e in emails_result.scalars().all()
+    ) or "No recent emails."
+
+    notes_result = await db.execute(
+        select(Note).where(Note.user_id == user.id).order_by(Note.updated_at.desc()).limit(10)
+    )
+    notes_context = "\n".join(
+        f"- {n.title}: {n.content[:150]}" for n in notes_result.scalars().all()
+    ) or "No notes."
+
     system_prompt = f"""You are an AI Chief of Staff agent. Today is {date.today().strftime('%A, %B %d, %Y')}.
 Your job is to analyze the user's emails, calendar, and notes to produce a structured daily briefing.
 
-You have tools to search and retrieve data. Use them strategically:
-1. First get upcoming events and recent emails to understand the day.
-2. Search for related context if you spot important topics.
-3. Check notes for any relevant personal context.
+Upcoming events:
+{events_context}
+
+Recent emails:
+{emails_context}
+
+Notes:
+{notes_context}
+
+The above is your baseline context. Only call a search tool if you need to dig into a
+specific topic, thread, or note that isn't already covered above — don't search by default.
 
 After gathering enough information, produce the final brief as JSON:
 {{
   "executive_summary": "2-3 sentence narrative in the voice of a real Chief of Staff, e.g. 'Good morning {{name}}. Today is primarily focused on...'",
-  "priorities": ["Top priority for today", "Second priority"],
-  "focus_areas": ["Area requiring attention or deep work"],
-  "attention_required": ["Risk, blocker, or missed commitment that needs eyes on it"],
-  "time_critical": [{{"task": "Urgent task", "date": "Jun 25"}}],
-  "coming_soon": [{{"task": "Upcoming task", "date": "Jun 28"}}],
-  "recommendations": {{"morning": "What to do first", "afternoon": "What to do next", "evening": "What to wrap up with"}}
+  "attention_required": ["<what> — <deadline/time window, if any> — <consequence if ignored>"],
+  "recommendations": {{"morning": "What to do first", "afternoon": "What to do next", "evening": "What to wrap up with"}},
+  "focus_breakdown": [{{"label": "Product", "percent": 70}}, {{"label": "Career", "percent": 20}}, {{"label": "Personal", "percent": 10}}]
 }}
 
 Rules:
 - "executive_summary": Written like a Chief of Staff briefing a busy exec — name what today is about and the single most important action, not a recap of every item below.
-- "priorities": 2-4 most important things for TODAY.
-- "focus_areas": Broader themes needing attention (1-3 items).
-- "attention_required": ONLY genuine exceptions — risks, blockers, overdue items, missed commitments. Omit this key (use an empty list) if nothing qualifies; do not pad it.
-- "time_critical": Hard deadlines within 1-3 days with dates.
-- "coming_soon": Tasks/events in 4-14 days with dates.
-- "recommendations": A short time-blocked plan for the day (morning/afternoon/evening), grounded in the priorities and meetings above.
+- "attention_required": ONLY genuine exceptions — risks, blockers, overdue items, missed commitments.
+  - One entry per distinct underlying issue. Before adding an item, check whether it's just a reworded version of one already in the list or of something raised in a prior brief (see memory below) — merge those into a single entry instead of repeating the same fact in different words.
+  - Each entry is one sentence following the template: <what> — <deadline or time window if any> — <consequence if ignored>. Use the same concrete nouns/phrasing each time the same recurring issue appears across days (e.g. always "Zapier application", never alternate with a rephrase) so it stays recognizable as the same item over time.
+  - Order the array by urgency-and-impact together, not by the order things appear in the source data: weigh how soon it's due AND how much actually goes wrong if ignored. A small task due in hours can outrank a vague long-term risk; a high-impact missed commitment can outrank a low-stakes same-day task. Put the single most urgent-and-important item first.
+  - Cap at 5 entries. If more genuinely qualify, keep only the 5 most urgent-and-important and drop the rest.
+  - Omit this key (use an empty list) if nothing qualifies; do not pad it.
+- "recommendations": A short, ordered, time-blocked plan for the day (morning/afternoon/evening). Each entry should read like a real Chief of Staff talking to the user directly — plain, human language, not a task-list fragment — and should lead with the single most important thing for that block first, grounded in priorities, deadlines, and meetings above.
+- "focus_breakdown": Classify today's work and meetings into 2-4 life-area labels (e.g. "Product", "Career", "Personal", "Admin", "Health") and estimate what percent of today's effort each takes. Percentages must sum to 100. Order by percent descending.
 - User name: {user.name}
 
 What you remember about this user, including feedback on past briefs:
@@ -200,11 +171,12 @@ What you remember about this user, including feedback on past briefs:
     client = get_openai_client()
     messages = [
         {"role": "system", "content": system_prompt},
-        {"role": "user", "content": "Generate my daily brief for today. Use the tools to gather my data first."},
+        {"role": "user", "content": "Generate my daily brief for today from the baseline context. Only search if you need more detail."},
     ]
 
-    # Agent loop — max 5 iterations to prevent runaway
-    for _ in range(5):
+    # Agent loop — max 3 iterations (baseline context is pre-fetched, so most
+    # runs finish in 1 round; this just caps the worst case for follow-up searches).
+    for _ in range(3):
         response = await client.chat.completions.create(
             model=settings.ai_model,
             messages=messages,
@@ -230,34 +202,24 @@ What you remember about this user, including feedback on past briefs:
                 "content": result,
             })
 
-    # Final response — extract JSON brief
-    final_content = choice.message.content or ""
-
-    # Try to parse JSON from the response
+    # Final structured output — always a dedicated tools-free call. Asking a
+    # tools-enabled call to also emit the final JSON is what makes some
+    # OpenAI-compatible providers (e.g. Groq) hallucinate a fake "JSON" tool
+    # call instead of returning content.
     try:
-        # Find JSON in the response
-        json_start = final_content.find("{")
-        json_end = final_content.rfind("}") + 1
-        if json_start >= 0 and json_end > json_start:
-            brief_json = json.loads(final_content[json_start:json_end])
-        else:
-            # Fallback: ask for structured output
-            followup = await client.chat.completions.create(
-                model=settings.ai_model,
-                messages=messages + [{"role": "user", "content": "Now output ONLY the JSON brief with keys: executive_summary, priorities, focus_areas, attention_required, time_critical, coming_soon, recommendations."}],
-                response_format={"type": "json_object"},
-                temperature=0.3,
-            )
-            brief_json = json.loads(followup.choices[0].message.content)
+        followup = await client.chat.completions.create(
+            model=settings.ai_model,
+            messages=messages + [{"role": "user", "content": "Now output ONLY the JSON brief with keys: executive_summary, attention_required, recommendations, focus_breakdown."}],
+            response_format={"type": "json_object"},
+            temperature=0.3,
+        )
+        brief_json = json.loads(followup.choices[0].message.content)
     except (json.JSONDecodeError, IndexError):
         brief_json = {
             "executive_summary": "Unable to generate today's brief — check that your data sync is up to date and try again.",
-            "priorities": ["Review your inbox and calendar"],
-            "focus_areas": ["Unable to generate detailed brief — check data sync"],
             "attention_required": [],
-            "time_critical": [],
-            "coming_soon": [],
             "recommendations": {},
+            "focus_breakdown": [],
         }
 
     # Save brief

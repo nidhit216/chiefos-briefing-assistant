@@ -14,11 +14,11 @@ const markdownComponents = {
   ol: ({ ...props }) => <ol className="list-decimal pl-5 mb-2 space-y-0.5" {...props} />,
   li: ({ ...props }) => <li {...props} />,
   strong: ({ ...props }) => <strong className="font-semibold" {...props} />,
-  a: ({ ...props }) => <a className="text-purple-600 underline" target="_blank" rel="noreferrer" {...props} />,
-  code: ({ ...props }) => <code className="bg-gray-100 rounded px-1 py-0.5 text-xs" {...props} />,
-  table: ({ ...props }) => <table className="border-collapse border border-gray-200 mb-2 text-xs" {...props} />,
-  th: ({ ...props }) => <th className="border border-gray-200 px-2 py-1 bg-gray-50 text-left" {...props} />,
-  td: ({ ...props }) => <td className="border border-gray-200 px-2 py-1" {...props} />,
+  a: ({ ...props }) => <a className="text-primary-700 underline" target="_blank" rel="noreferrer" {...props} />,
+  code: ({ ...props }) => <code className="bg-cream-200 rounded px-1 py-0.5 text-xs" {...props} />,
+  table: ({ ...props }) => <table className="border-collapse border border-ink/10 mb-2 text-xs" {...props} />,
+  th: ({ ...props }) => <th className="border border-ink/10 px-2 py-1 bg-cream-100 text-left" {...props} />,
+  td: ({ ...props }) => <td className="border border-ink/10 px-2 py-1" {...props} />,
 };
 
 export default function ChatPage() {
@@ -134,7 +134,7 @@ export default function ChatPage() {
         <div>
           <button
             onClick={startNewChat}
-            className="w-full text-sm bg-purple-600 text-white px-3 py-2 rounded-lg hover:bg-purple-700 transition-colors mb-2"
+            className="w-full text-sm bg-primary-700 text-white px-3 py-2 rounded-md hover:bg-primary-800 transition-colors mb-2"
           >
             + New chat
           </button>
@@ -143,10 +143,10 @@ export default function ChatPage() {
               <button
                 key={s.session_id}
                 onClick={() => openSession(s.session_id)}
-                className={`w-full text-left text-xs px-2 py-2 rounded-lg transition-colors truncate ${
+                className={`w-full text-left text-xs px-2 py-2 rounded-md transition-colors truncate ${
                   sessionId === s.session_id
-                    ? "bg-purple-50 text-purple-800"
-                    : "text-gray-600 hover:bg-gray-100"
+                    ? "bg-primary-50 text-primary-800"
+                    : "text-ink-muted hover:bg-cream-200"
                 }`}
                 title={s.last_message}
               >
@@ -154,7 +154,7 @@ export default function ChatPage() {
               </button>
             ))}
             {sessions.length === 0 && (
-              <p className="text-xs text-gray-400 px-2">No past chats yet.</p>
+              <p className="text-xs text-ink-muted/70 px-2">No past chats yet.</p>
             )}
           </div>
         </div>
@@ -162,7 +162,7 @@ export default function ChatPage() {
         <div>
           <button
             onClick={() => setShowMemory((v) => !v)}
-            className="text-xs font-medium text-gray-500 hover:text-gray-700 mb-2"
+            className="text-xs font-medium text-ink-muted hover:text-ink-muted mb-2"
           >
             {showMemory ? "▾" : "▸"} What ChiefOS remembers ({memories.length})
           </button>
@@ -171,12 +171,12 @@ export default function ChatPage() {
               {memories.map((m) => (
                 <div
                   key={m.id}
-                  className="flex items-start justify-between gap-1 text-xs bg-gray-50 rounded-lg px-2 py-1.5"
+                  className="flex items-start justify-between gap-1 text-xs bg-cream-100 rounded-md px-2 py-1.5"
                 >
-                  <span className="text-gray-700">{m.content}</span>
+                  <span className="text-ink-muted">{m.content}</span>
                   <button
                     onClick={() => deleteMemory(m.id)}
-                    className="text-gray-400 hover:text-red-500 flex-shrink-0"
+                    className="text-ink-muted/70 hover:text-red-500 flex-shrink-0"
                     title="Forget this"
                   >
                     ✕
@@ -184,7 +184,7 @@ export default function ChatPage() {
                 </div>
               ))}
               {memories.length === 0 && (
-                <p className="text-xs text-gray-400 px-2">Nothing remembered yet.</p>
+                <p className="text-xs text-ink-muted/70 px-2">Nothing remembered yet.</p>
               )}
             </div>
           )}
@@ -194,22 +194,22 @@ export default function ChatPage() {
       {/* Chat */}
       <div className="flex flex-col flex-1 min-w-0 h-full">
         <div className="flex items-center justify-between mb-4">
-          <h1 className="text-2xl font-bold text-gray-900">Chat with your data</h1>
+          <h1 className="font-serif text-3xl text-ink">Chat with your data</h1>
           {sourcesUsed > 0 && (
-            <span className="text-xs bg-purple-100 text-purple-700 px-2 py-1 rounded">
+            <span className="text-xs bg-primary-100 text-primary-800 px-2 py-1 rounded">
               {sourcesUsed} sources used
             </span>
           )}
         </div>
 
-        <p className="text-sm text-gray-500 mb-4">
+        <p className="text-sm text-ink-muted mb-4">
           Ask questions about your emails, calendar, and notes. Powered by RAG semantic search.
         </p>
 
         {/* Messages */}
-        <div className="flex-1 overflow-y-auto bg-gray-50 rounded-xl p-4 mb-4">
+        <div className="flex-1 overflow-y-auto bg-cream-50 border border-ink/10 rounded-md p-4 mb-4">
           {messages.length === 0 && (
-            <div className="h-full flex flex-col items-center justify-center text-center text-gray-400">
+            <div className="h-full flex flex-col items-center justify-center text-center text-ink-muted/70">
               <p className="text-lg">Ask me anything about your data</p>
               <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-2 max-w-md mx-auto">
                 {[
@@ -221,7 +221,7 @@ export default function ChatPage() {
                   <button
                     key={suggestion}
                     onClick={() => setInput(suggestion)}
-                    className="text-sm text-left bg-white border border-gray-200 rounded-lg p-2 hover:border-purple-300 hover:bg-purple-50 transition-colors"
+                    className="text-sm text-left bg-cream-100 border border-ink/10 rounded-md p-2 hover:border-primary-300 hover:bg-primary-50 transition-colors"
                   >
                     {suggestion}
                   </button>
@@ -236,10 +236,10 @@ export default function ChatPage() {
               className={`mb-3 flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
             >
               <div
-                className={`max-w-[80%] rounded-xl px-4 py-2 ${
+                className={`max-w-[80%] rounded-md px-4 py-2 ${
                   msg.role === "user"
-                    ? "bg-purple-600 text-white"
-                    : "bg-white border border-gray-200 text-gray-800"
+                    ? "bg-primary-700 text-white"
+                    : "bg-white border border-ink/10 text-ink"
                 }`}
               >
                 {msg.role === "assistant" ? (
@@ -257,11 +257,11 @@ export default function ChatPage() {
 
           {loading && (
             <div className="flex justify-start mb-3">
-              <div className="bg-white border border-gray-200 rounded-xl px-4 py-2">
+              <div className="bg-white border border-ink/10 rounded-md px-4 py-2">
                 <div className="flex gap-1">
-                  <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: "0ms" }}></span>
-                  <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: "150ms" }}></span>
-                  <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: "300ms" }}></span>
+                  <span className="w-2 h-2 bg-ink-muted rounded-full animate-bounce" style={{ animationDelay: "0ms" }}></span>
+                  <span className="w-2 h-2 bg-ink-muted rounded-full animate-bounce" style={{ animationDelay: "150ms" }}></span>
+                  <span className="w-2 h-2 bg-ink-muted rounded-full animate-bounce" style={{ animationDelay: "300ms" }}></span>
                 </div>
               </div>
             </div>
@@ -278,13 +278,13 @@ export default function ChatPage() {
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && sendMessage()}
             placeholder="Ask about your emails, calendar, notes..."
-            className="flex-1 border border-gray-300 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+            className="flex-1 border border-ink/20 rounded-md px-4 py-3 focus:outline-none focus:ring-2 focus:ring-primary-600 focus:border-transparent"
             disabled={loading}
           />
           <button
             onClick={sendMessage}
             disabled={loading || !input.trim()}
-            className="bg-purple-600 text-white px-6 py-3 rounded-xl hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            className="bg-primary-700 text-white px-6 py-3 rounded-md hover:bg-primary-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />

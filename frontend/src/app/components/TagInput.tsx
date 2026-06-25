@@ -23,18 +23,18 @@ export default function TagInput({ tags, onChange }: TagInputProps) {
   }
 
   return (
-    <div className="border border-gray-300 rounded-lg px-3 py-2 mb-3 focus-within:ring-2 focus-within:ring-primary-500">
+    <div className="border border-ink/20 rounded-md px-3 py-2 mb-3 focus-within:ring-2 focus-within:ring-primary-600">
       <div className="flex flex-wrap gap-1.5">
         {tags.map((tag) => (
           <span
             key={tag}
-            className="flex items-center gap-1 text-xs bg-primary-50 text-primary-700 px-2 py-1 rounded"
+            className="flex items-center gap-1 font-mono text-[11px] bg-cream-200 text-ink-muted px-2 py-1 rounded"
           >
             {tag}
             <button
               type="button"
               onClick={() => removeTag(tag)}
-              className="text-primary-500 hover:text-primary-800"
+              className="text-ink-muted hover:text-ink"
               aria-label={`Remove ${tag}`}
             >
               ×

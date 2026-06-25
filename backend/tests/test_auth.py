@@ -107,3 +107,48 @@ async def test_me_with_token_for_nonexistent_user_returns_401(unauth_client):
     token = create_access_token(uuid.uuid4())
     res = await unauth_client.get("/auth/me", headers={"Authorization": f"Bearer {token}"})
     assert res.status_code == 401
+
+
+async def test_me_reports_google_connected_true_when_tokens_present(client, test_user):
+    res = await client.get("/auth/me")
+
+    assert res.status_code == 200
+    assert res.json()["google_connected"] is True
+
+
+async def test_me_reports_google_connected_false_when_tokens_absent(client, test_user):
+    async with async_session() as session:
+        result = await session.execute(select(User).where(User.id == test_user.id))
+        user = result.scalar_one()
+        user.google_access_token = None
+        user.google_refresh_token = None
+        await session.commit()
+
+    res = await client.get("/auth/me")
+
+    assert res.status_code == 200
+    assert res.json()["google_connected"] is False
+
+
+async def test_reconnecting_via_callback_refreshes_tokens_for_existing_user(
+    unauth_client, test_user, monkeypatch
+):
+    """Re-running the OAuth callback for an already-linked google_id (e.g. clicking
+    'Connect' again) should refresh that same account's tokens."""
+    responses = [
+        FakeResponse(200, {"access_token": "reconnected-access", "refresh_token": "reconnected-refresh"}),
+        FakeResponse(200, {"id": test_user.google_id, "email": test_user.email, "name": test_user.name}),
+    ]
+    monkeypatch.setattr(auth_router.httpx, "AsyncClient", fake_async_client_factory(responses))
+
+    callback_res = await unauth_client.get(
+        "/auth/callback", params={"code": "auth-code"}, follow_redirects=False
+    )
+    assert callback_res.status_code in (302, 307)
+    assert "token=" in callback_res.headers["location"]
+
+    async with async_session() as session:
+        result = await session.execute(select(User).where(User.id == test_user.id))
+        reconnected = result.scalar_one()
+        assert reconnected.google_access_token == "reconnected-access"
+        assert reconnected.google_refresh_token == "reconnected-refresh"

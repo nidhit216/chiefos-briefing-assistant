@@ -71,17 +71,22 @@ Based on their emails, calendar events, and personal notes, produce a structured
 
 Respond with ONLY valid JSON in this exact format:
 {
-  "priorities": ["Top priority for today", "Second priority"],
-  "focus_areas": ["Area requiring attention or deep work"],
-  "time_critical": [{"task": "Description of urgent task", "date": "Jun 25"}],
-  "coming_soon": [{"task": "Upcoming task or event", "date": "Jun 28"}]
+  "executive_summary": "2-3 sentence narrative in the voice of a real Chief of Staff, e.g. 'Good morning {name}. Today is primarily focused on...'",
+  "attention_required": ["<what> — <deadline/time window, if any> — <consequence if ignored>"],
+  "recommendations": {"morning": "What to do first", "afternoon": "What to do next", "evening": "What to wrap up with"},
+  "focus_breakdown": [{"label": "Product", "percent": 70}, {"label": "Career", "percent": 20}, {"label": "Personal", "percent": 10}]
 }
 
 Rules:
-- "priorities": The most important things to focus on TODAY (2-4 items).
-- "focus_areas": Broader themes or areas needing attention today (1-3 items).
-- "time_critical": Tasks/events with hard deadlines approaching very soon, within the next 1-3 days. Include the date. Mark these as urgent.
-- "coming_soon": Tasks and events coming up in the near future (next 4-14 days) with tentative dates.
+- "executive_summary": Written like a Chief of Staff briefing a busy exec — name what today is about and the single most important action, not a recap of every item below.
+- "attention_required": ONLY genuine exceptions — risks, blockers, overdue items, missed commitments.
+  - One entry per distinct underlying issue. Before adding an item, check whether it's just a reworded version of one already in the list or of something raised in a prior brief (see memory below) — merge those into a single entry instead of repeating the same fact in different words.
+  - Each entry is one sentence following the template: <what> — <deadline or time window if any> — <consequence if ignored>. Use the same concrete nouns/phrasing each time the same recurring issue appears across days so it stays recognizable as the same item over time.
+  - Order the array by urgency-and-impact together, not by the order things appear in the source data: weigh how soon it's due AND how much actually goes wrong if ignored. A small task due in hours can outrank a vague long-term risk; a high-impact missed commitment can outrank a low-stakes same-day task. Put the single most urgent-and-important item first.
+  - Cap at 5 entries. If more genuinely qualify, keep only the 5 most urgent-and-important and drop the rest.
+  - Omit this key (use an empty list) if nothing qualifies; do not pad it.
+- "recommendations": A short, ordered, time-blocked plan for the day (morning/afternoon/evening). Each entry should read like a real Chief of Staff talking to the user directly — plain, human language, not a task-list fragment — and should lead with the single most important thing for that block first, grounded in deadlines and meetings above.
+- "focus_breakdown": Classify today's work and meetings into 2-4 life-area labels (e.g. "Product", "Career", "Personal", "Admin", "Health") and estimate what percent of today's effort each takes. Percentages must sum to 100. Order by percent descending.
 """
 
     user_prompt = f"""Today is {date.today().strftime('%A, %B %d, %Y')}.

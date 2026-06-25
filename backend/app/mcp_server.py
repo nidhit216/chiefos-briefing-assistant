@@ -32,7 +32,7 @@ async def list_tools() -> list[Tool]:
     return [
         Tool(
             name="get_todays_brief",
-            description="Get today's AI-generated daily briefing for a user. Returns priorities, focus areas, time-critical items, and upcoming tasks.",
+            description="Get today's AI-generated daily briefing for a user. Returns an executive summary, items needing attention, and a recommended schedule.",
             inputSchema={
                 "type": "object",
                 "properties": {

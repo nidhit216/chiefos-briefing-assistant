@@ -3,13 +3,14 @@
 @tailwind utilities;
 
 :root {
-  --foreground-rgb: 0, 0, 0;
-  --background-rgb: 249, 250, 251;
+  --foreground-rgb: 26, 26, 26;
+  --background-rgb: 250, 247, 240;
 }
 
 body {
   color: rgb(var(--foreground-rgb));
   background: rgb(var(--background-rgb));
+  font-feature-settings: "tnum" 1;
 }
 
 @keyframes slide-up {

@@ -137,17 +137,17 @@ export default function NotesPage() {
   return (
     <PageShell maxWidth="max-w-4xl">
       <div className="flex justify-between items-center mb-6">
-        <h2 className="text-2xl font-bold text-gray-900">Notes</h2>
+        <h2 className="font-serif text-3xl text-ink">Notes</h2>
         <button
           onClick={() => setShowCreate(!showCreate)}
-          className="bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700"
+          className="bg-primary-600 text-white px-4 py-2 rounded-md hover:bg-primary-700"
         >
           {showCreate ? "Cancel" : "+ New Note"}
         </button>
       </div>
 
       {(allTags.length > 0 || notes.length > 0) && (
-        <div className="bg-white rounded-xl shadow p-4 mb-6 flex flex-wrap items-center gap-3">
+        <div className="bg-cream-50 border border-ink/10 rounded-md p-4 mb-6 flex flex-wrap items-center gap-3">
           {allTags.length > 0 && (
             <div className="flex flex-wrap gap-1.5">
               {allTags.map((tag) => (
@@ -157,7 +157,7 @@ export default function NotesPage() {
                   className={`text-xs px-2 py-1 rounded transition-colors ${
                     selectedTags.includes(tag)
                       ? "bg-primary-600 text-white"
-                      : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                      : "bg-cream-200 text-ink-muted hover:bg-cream-300"
                   }`}
                 >
                   {tag}
@@ -166,12 +166,12 @@ export default function NotesPage() {
             </div>
           )}
           <div className="flex items-center gap-2 ml-auto">
-            <label className="text-xs text-gray-500">Due by</label>
+            <label className="text-xs text-ink-muted">Due by</label>
             <input
               type="date"
               value={dueBefore}
               onChange={(e) => setDueBefore(e.target.value)}
-              className="text-xs border border-gray-300 rounded-md px-2 py-1"
+              className="text-xs border border-ink/20 rounded-md px-2 py-1"
             />
             {(selectedTags.length > 0 || dueBefore) && (
               <button
@@ -179,7 +179,7 @@ export default function NotesPage() {
                   setSelectedTags([]);
                   setDueBefore("");
                 }}
-                className="text-xs text-gray-500 hover:underline"
+                className="text-xs text-ink-muted hover:underline"
               >
                 Clear filters
               </button>
@@ -189,30 +189,30 @@ export default function NotesPage() {
       )}
 
       {showCreate && (
-        <form onSubmit={createNote} className="bg-white rounded-xl shadow p-6 mb-6">
+        <form onSubmit={createNote} className="bg-cream-50 border border-ink/10 rounded-md p-6 mb-6">
           <input
             type="text"
             placeholder="Title"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             required
-            className="w-full border border-gray-300 rounded-lg px-4 py-2 mb-3 focus:outline-none focus:ring-2 focus:ring-primary-500"
+            className="w-full border border-ink/20 rounded-md px-4 py-2 mb-3 focus:outline-none focus:ring-2 focus:ring-primary-500"
           />
           <NoteEditor content={content} onChange={setContent} />
           <TagInput tags={tags} onChange={setTags} />
           <div className="flex items-center gap-2 mb-4">
-            <label className="text-sm text-gray-600">Due date (optional)</label>
+            <label className="text-sm text-ink-muted">Due date (optional)</label>
             <input
               type="date"
               value={dueDate}
               onChange={(e) => setDueDate(e.target.value)}
-              className="text-sm border border-gray-300 rounded-md px-2 py-1"
+              className="text-sm border border-ink/20 rounded-md px-2 py-1"
             />
             {dueDate && (
               <button
                 type="button"
                 onClick={() => setDueDate("")}
-                className="text-xs text-gray-500 hover:underline"
+                className="text-xs text-ink-muted hover:underline"
               >
                 Clear
               </button>
@@ -220,7 +220,7 @@ export default function NotesPage() {
           </div>
           <button
             type="submit"
-            className="bg-primary-600 text-white px-6 py-2 rounded-lg hover:bg-primary-700"
+            className="bg-primary-600 text-white px-6 py-2 rounded-md hover:bg-primary-700"
           >
             Save Note
           </button>
@@ -230,28 +230,28 @@ export default function NotesPage() {
       <div className="space-y-4">
         {sortedNotes.map((note) =>
           editingId === note.id ? (
-            <div key={note.id} className="bg-white rounded-xl shadow p-6">
+            <div key={note.id} className="bg-cream-50 border border-ink/10 rounded-md p-6">
               <input
                 type="text"
                 value={editTitle}
                 onChange={(e) => setEditTitle(e.target.value)}
-                className="w-full border border-gray-300 rounded-lg px-4 py-2 mb-3 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                className="w-full border border-ink/20 rounded-md px-4 py-2 mb-3 focus:outline-none focus:ring-2 focus:ring-primary-500"
               />
               <NoteEditor content={editContent} onChange={setEditContent} />
               <TagInput tags={editTags} onChange={setEditTags} />
               <div className="flex items-center gap-2 mb-4">
-                <label className="text-sm text-gray-600">Due date (optional)</label>
+                <label className="text-sm text-ink-muted">Due date (optional)</label>
                 <input
                   type="date"
                   value={editDueDate}
                   onChange={(e) => setEditDueDate(e.target.value)}
-                  className="text-sm border border-gray-300 rounded-md px-2 py-1"
+                  className="text-sm border border-ink/20 rounded-md px-2 py-1"
                 />
                 {editDueDate && (
                   <button
                     type="button"
                     onClick={() => setEditDueDate("")}
-                    className="text-xs text-gray-500 hover:underline"
+                    className="text-xs text-ink-muted hover:underline"
                   >
                     Clear
                   </button>
@@ -260,20 +260,20 @@ export default function NotesPage() {
               <div className="flex gap-2">
                 <button
                   onClick={() => saveEdit(note.id)}
-                  className="bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700"
+                  className="bg-primary-600 text-white px-4 py-2 rounded-md hover:bg-primary-700"
                 >
                   Save
                 </button>
                 <button
                   onClick={cancelEdit}
-                  className="border border-gray-300 px-4 py-2 rounded-lg hover:bg-gray-50"
+                  className="border border-ink/20 px-4 py-2 rounded-md hover:bg-cream-200"
                 >
                   Cancel
                 </button>
               </div>
             </div>
           ) : (
-            <div key={note.id} className="bg-white rounded-xl shadow p-6">
+            <div key={note.id} className="bg-cream-50 border border-ink/10 rounded-md p-6">
               <div className="flex justify-between items-start">
                 <div className="flex-1">
                   <div className="flex items-start gap-2">
@@ -281,42 +281,42 @@ export default function NotesPage() {
                       type="checkbox"
                       checked={note.completed}
                       onChange={() => toggleCompleted(note)}
-                      className="mt-1.5 h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                      className="mt-1.5 h-4 w-4 rounded border-ink/20 text-primary-600 focus:ring-primary-500"
                     />
                     <h2
                       className={`text-lg font-semibold ${
-                        note.completed ? "line-through text-gray-400" : "text-gray-900"
+                        note.completed ? "line-through text-ink-muted/70" : "text-ink"
                       }`}
                     >
                       {note.title}
                     </h2>
                   </div>
                   <div
-                    className="prose-sm max-w-none text-gray-600 mt-1"
+                    className="prose-sm max-w-none text-ink-muted mt-1"
                     dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(note.content) }}
                   />
                   <div className="flex gap-2 mt-3 flex-wrap items-center">
                     {note.tags?.map((tag) => (
                       <span
                         key={tag}
-                        className="text-xs bg-primary-50 text-primary-700 px-2 py-1 rounded"
+                        className="font-mono text-[11px] bg-cream-200 text-ink-muted px-2 py-1 rounded"
                       >
                         {tag}
                       </span>
                     ))}
                     {note.due_date && (
                       <span
-                        className={`text-xs px-2 py-1 rounded ${
+                        className={`font-mono text-xs px-2 py-1 rounded ${
                           isOverdue(note.due_date)
                             ? "bg-red-50 text-red-700"
-                            : "bg-blue-50 text-blue-700"
+                            : "bg-primary-50 text-primary-700"
                         }`}
                       >
                         Due {new Date(note.due_date).toLocaleDateString()}
                       </span>
                     )}
                   </div>
-                  <p className="text-xs text-gray-400 mt-2">
+                  <p className="font-mono text-xs text-ink-muted/70 mt-2">
                     Updated {new Date(note.updated_at).toLocaleDateString()}
                   </p>
                 </div>
@@ -339,7 +339,7 @@ export default function NotesPage() {
           )
         )}
         {notes.length === 0 && (
-          <p className="text-gray-500 text-center py-8">
+          <p className="text-ink-muted text-center py-8">
             No notes yet. Create your first note!
           </p>
         )}

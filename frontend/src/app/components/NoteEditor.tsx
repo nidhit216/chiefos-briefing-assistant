@@ -16,7 +16,7 @@ export default function NoteEditor({ content, onChange }: NoteEditorProps) {
     onUpdate: ({ editor }) => onChange(editor.getHTML()),
     editorProps: {
       attributes: {
-        class: "prose-sm max-w-none min-h-[120px] focus:outline-none px-4 py-2 text-sm text-gray-800",
+        class: "prose-sm max-w-none min-h-[120px] focus:outline-none px-4 py-2 text-sm text-ink",
       },
     },
   });
@@ -24,11 +24,11 @@ export default function NoteEditor({ content, onChange }: NoteEditorProps) {
   if (!editor) return null;
 
   const toolbarBtn = (active: boolean) =>
-    `px-2 py-1 text-xs rounded-md ${active ? "bg-primary-100 text-primary-700" : "text-gray-500 hover:bg-gray-100"}`;
+    `px-2 py-1 text-xs rounded-md ${active ? "bg-primary-100 text-primary-700" : "text-ink-muted hover:bg-cream-200"}`;
 
   return (
-    <div className="border border-gray-300 rounded-lg overflow-hidden mb-3 focus-within:ring-2 focus-within:ring-primary-500">
-      <div className="flex items-center gap-1 border-b border-gray-200 bg-gray-50 px-2 py-1">
+    <div className="border border-ink/20 rounded-md overflow-hidden mb-3 focus-within:ring-2 focus-within:ring-primary-600">
+      <div className="flex items-center gap-1 border-b border-ink/10 bg-cream-100 px-2 py-1">
         <button
           type="button"
           onClick={() => editor.chain().focus().toggleBold().run()}

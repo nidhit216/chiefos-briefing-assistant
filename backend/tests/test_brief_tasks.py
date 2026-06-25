@@ -12,10 +12,7 @@ async def list_tasks_for(user_id):
 
 
 async def test_sync_brief_tasks_inserts_new_items(test_user):
-    brief_json = {
-        "time_critical": [{"task": "File the report", "date": "Jun 25"}],
-        "coming_soon": [{"task": "Plan offsite", "date": "Jul 1"}],
-    }
+    brief_json = {"attention_required": ["File the report"]}
 
     async with async_session() as session:
         await sync_brief_tasks(test_user, brief_json, session)
@@ -23,36 +20,26 @@ async def test_sync_brief_tasks_inserts_new_items(test_user):
 
     tasks = await list_tasks_for(test_user.id)
     by_category = {t.category: t.task for t in tasks}
-    assert by_category["time_critical"] == "File the report"
-    assert by_category["coming_soon"] == "Plan offsite"
+    assert by_category["attention_required"] == "File the report"
     assert all(t.completed is False for t in tasks)
 
 
-async def test_sync_brief_tasks_matches_existing_task_case_insensitively_and_updates_date(
-    test_user,
-):
+async def test_sync_brief_tasks_matches_existing_task_case_insensitively(test_user):
     async with async_session() as session:
-        await sync_brief_tasks(
-            test_user, {"time_critical": [{"task": "File the report", "date": "Jun 25"}]}, session
-        )
+        await sync_brief_tasks(test_user, {"attention_required": ["File the report"]}, session)
         await session.commit()
 
     async with async_session() as session:
-        await sync_brief_tasks(
-            test_user, {"time_critical": [{"task": "FILE THE REPORT", "date": "Jun 26"}]}, session
-        )
+        await sync_brief_tasks(test_user, {"attention_required": ["FILE THE REPORT"]}, session)
         await session.commit()
 
     tasks = await list_tasks_for(test_user.id)
     assert len(tasks) == 1
-    assert tasks[0].date_label == "Jun 26"
 
 
 async def test_sync_brief_tasks_leaves_completed_flag_untouched_on_regeneration(test_user):
     async with async_session() as session:
-        await sync_brief_tasks(
-            test_user, {"time_critical": [{"task": "File the report", "date": "Jun 25"}]}, session
-        )
+        await sync_brief_tasks(test_user, {"attention_required": ["File the report"]}, session)
         await session.commit()
 
     tasks = await list_tasks_for(test_user.id)
@@ -62,28 +49,21 @@ async def test_sync_brief_tasks_leaves_completed_flag_untouched_on_regeneration(
         await session.commit()
 
     async with async_session() as session:
-        await sync_brief_tasks(
-            test_user, {"time_critical": [{"task": "File the report", "date": "Jun 30"}]}, session
-        )
+        await sync_brief_tasks(test_user, {"attention_required": ["File the report"]}, session)
         await session.commit()
 
     tasks = await list_tasks_for(test_user.id)
     assert len(tasks) == 1
     assert tasks[0].completed is True
-    assert tasks[0].date_label == "Jun 30"
 
 
 async def test_sync_brief_tasks_never_deletes_tasks_not_seen_again(test_user):
     async with async_session() as session:
-        await sync_brief_tasks(
-            test_user, {"time_critical": [{"task": "Old task", "date": "Jun 25"}]}, session
-        )
+        await sync_brief_tasks(test_user, {"attention_required": ["Old task"]}, session)
         await session.commit()
 
     async with async_session() as session:
-        await sync_brief_tasks(
-            test_user, {"time_critical": [{"task": "New task", "date": "Jun 30"}]}, session
-        )
+        await sync_brief_tasks(test_user, {"attention_required": ["New task"]}, session)
         await session.commit()
 
     tasks = await list_tasks_for(test_user.id)
@@ -91,26 +71,18 @@ async def test_sync_brief_tasks_never_deletes_tasks_not_seen_again(test_user):
     assert titles == {"Old task", "New task"}
 
 
-async def test_sync_brief_tasks_handles_plain_string_items_for_priorities_and_focus_areas(test_user):
-    brief_json = {
-        "priorities": ["Ship the release"],
-        "focus_areas": ["Deep work on Q3 planning"],
-    }
-
+async def test_sync_brief_tasks_skips_items_with_blank_task_text(test_user):
     async with async_session() as session:
-        await sync_brief_tasks(test_user, brief_json, session)
+        await sync_brief_tasks(test_user, {"attention_required": ["  "]}, session)
         await session.commit()
 
     tasks = await list_tasks_for(test_user.id)
-    by_category = {t.category: t.task for t in tasks}
-    assert by_category["priorities"] == "Ship the release"
-    assert by_category["focus_areas"] == "Deep work on Q3 planning"
-    assert all(t.date_label is None for t in tasks)
+    assert tasks == []
 
 
-async def test_sync_brief_tasks_skips_items_with_blank_task_text(test_user):
+async def test_sync_brief_tasks_ignores_unknown_categories(test_user):
     async with async_session() as session:
-        await sync_brief_tasks(test_user, {"time_critical": [{"task": "  ", "date": "Jun 25"}]}, session)
+        await sync_brief_tasks(test_user, {"priorities": ["Ship the release"]}, session)
         await session.commit()
 
     tasks = await list_tasks_for(test_user.id)
@@ -120,12 +92,7 @@ async def test_sync_brief_tasks_skips_items_with_blank_task_text(test_user):
 async def test_list_brief_tasks_orders_incomplete_first(client, test_user):
     async with async_session() as session:
         await sync_brief_tasks(
-            test_user,
-            {
-                "time_critical": [{"task": "Task A", "date": "Jun 25"}],
-                "coming_soon": [{"task": "Task B", "date": "Jul 1"}],
-            },
-            session,
+            test_user, {"attention_required": ["Task A", "Task B"]}, session
         )
         await session.commit()
 
@@ -146,28 +113,20 @@ async def test_list_brief_tasks_orders_incomplete_first(client, test_user):
 
 async def test_list_brief_tasks_filters_by_category(client, test_user):
     async with async_session() as session:
-        await sync_brief_tasks(
-            test_user,
-            {
-                "time_critical": [{"task": "Urgent task", "date": "Jun 25"}],
-                "coming_soon": [{"task": "Later task", "date": "Jul 1"}],
-            },
-            session,
-        )
+        await sync_brief_tasks(test_user, {"attention_required": ["Urgent task"]}, session)
         await session.commit()
 
-    res = await client.get("/briefs/tasks", params={"category": "coming_soon"})
+    res = await client.get("/briefs/tasks", params={"category": "nonexistent"})
 
     assert res.status_code == 200
-    tasks = res.json()
-    assert [t["task"] for t in tasks] == ["Later task"]
+    assert res.json() == []
 
 
 async def test_list_brief_tasks_does_not_leak_other_users_tasks(client, test_user, make_user):
     other = await make_user()
     async with async_session() as session:
-        await sync_brief_tasks(other, {"time_critical": [{"task": "Not yours", "date": "Jun 25"}]}, session)
-        await sync_brief_tasks(test_user, {"time_critical": [{"task": "Yours", "date": "Jun 25"}]}, session)
+        await sync_brief_tasks(other, {"attention_required": ["Not yours"]}, session)
+        await sync_brief_tasks(test_user, {"attention_required": ["Yours"]}, session)
         await session.commit()
 
     res = await client.get("/briefs/tasks")
@@ -178,7 +137,7 @@ async def test_list_brief_tasks_does_not_leak_other_users_tasks(client, test_use
 
 async def test_patch_brief_task_toggles_completed(client, test_user):
     async with async_session() as session:
-        await sync_brief_tasks(test_user, {"time_critical": [{"task": "Task A", "date": "Jun 25"}]}, session)
+        await sync_brief_tasks(test_user, {"attention_required": ["Task A"]}, session)
         await session.commit()
     task = (await list_tasks_for(test_user.id))[0]
 
@@ -198,7 +157,7 @@ async def test_patch_nonexistent_brief_task_returns_404(client):
 async def test_patch_other_users_brief_task_returns_404(client, test_user, make_user):
     other = await make_user()
     async with async_session() as session:
-        await sync_brief_tasks(other, {"time_critical": [{"task": "Not yours", "date": "Jun 25"}]}, session)
+        await sync_brief_tasks(other, {"attention_required": ["Not yours"]}, session)
         await session.commit()
     task = (await list_tasks_for(other.id))[0]
 

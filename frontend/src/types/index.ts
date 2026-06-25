@@ -3,6 +3,7 @@ export interface User {
   email: string;
   name: string;
   google_id: string;
+  google_connected: boolean;
 }
 
 export interface Email {
@@ -37,12 +38,9 @@ export interface Note {
 
 export interface BriefContent {
   executive_summary: string;
-  priorities: string[];
-  focus_areas: string[];
   attention_required: string[];
-  time_critical: { task: string; date: string }[];
-  coming_soon: { task: string; date: string }[];
   recommendations: { morning?: string; afternoon?: string; evening?: string };
+  focus_breakdown: { label: string; percent: number }[];
 }
 
 export interface DailyBrief {
@@ -87,7 +85,7 @@ export interface Memory {
 
 export interface BriefTask {
   id: string;
-  category: "priorities" | "focus_areas" | "attention_required" | "time_critical" | "coming_soon";
+  category: "attention_required";
   task: string;
   date_label: string | null;
   completed: boolean;

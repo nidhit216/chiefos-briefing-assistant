@@ -6,8 +6,8 @@ from pydantic import BaseModel
 class DailyBriefRead(BaseModel):
     id: uuid.UUID
     brief_date: date
-    # JSON string with keys: executive_summary, priorities, focus_areas,
-    # attention_required, time_critical, coming_soon, recommendations.
+    # JSON string with keys: executive_summary, attention_required,
+    # recommendations, focus_breakdown.
     content: str
     created_at: datetime
 

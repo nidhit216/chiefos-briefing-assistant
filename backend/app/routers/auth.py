@@ -101,6 +101,17 @@ async def callback(code: str, db: AsyncSession = Depends(get_db)):
     return RedirectResponse(f"{settings.frontend_url}/auth/callback?token={access_token}")
 
 
+def _to_user_read(user: User) -> UserRead:
+    return UserRead(
+        id=user.id,
+        email=user.email,
+        name=user.name,
+        google_id=user.google_id,
+        google_connected=bool(user.google_access_token),
+    )
+
+
 @router.get("/me", response_model=UserRead)
-async def get_me(user: User = Depends(get_current_user)):
-    return user
+async def get_me(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(User).where(User.id == user.id))
+    return _to_user_read(result.scalar_one())

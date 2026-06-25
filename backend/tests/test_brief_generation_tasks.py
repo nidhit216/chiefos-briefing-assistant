@@ -10,19 +10,14 @@ from app.services import planner, agent
 
 
 BRIEF_JSON = {
-    "priorities": ["Ship the launch"],
-    "focus_areas": ["Customer feedback"],
-    "time_critical": [{"task": "File the report", "date": "Jun 25"}],
-    "coming_soon": [{"task": "Plan offsite", "date": "Jul 1"}],
+    "executive_summary": "Good morning. Today is about the launch.",
+    "attention_required": ["File the report"],
+    "recommendations": {"morning": "Ship the launch", "afternoon": "Review feedback", "evening": "Wrap up"},
 }
 
 AGENT_BRIEF_JSON = {
     "executive_summary": "Good morning. Today is about the launch.",
-    "priorities": ["Ship the launch"],
-    "focus_areas": ["Customer feedback"],
     "attention_required": ["Invoice from Acme is overdue"],
-    "time_critical": [{"task": "File the report", "date": "Jun 25"}],
-    "coming_soon": [{"task": "Plan offsite", "date": "Jul 1"}],
     "recommendations": {"morning": "Ship the launch", "afternoon": "Review feedback", "evening": "Wrap up"},
 }
 
@@ -57,8 +52,7 @@ async def test_generate_brief_persists_brief_tasks(test_user, monkeypatch):
         tasks = result.scalars().all()
 
     by_category = {t.category: t.task for t in tasks}
-    assert by_category["time_critical"] == "File the report"
-    assert by_category["coming_soon"] == "Plan offsite"
+    assert by_category["attention_required"] == "File the report"
 
 
 async def test_generate_brief_with_agent_persists_brief_tasks(test_user, monkeypatch):
@@ -72,8 +66,6 @@ async def test_generate_brief_with_agent_persists_brief_tasks(test_user, monkeyp
         tasks = result.scalars().all()
 
     by_category = {t.category: t.task for t in tasks}
-    assert by_category["time_critical"] == "File the report"
-    assert by_category["coming_soon"] == "Plan offsite"
     assert by_category["attention_required"] == "Invoice from Acme is overdue"
 
 

@@ -7,6 +7,7 @@ class UserRead(BaseModel):
     email: str
     name: str
     google_id: str
+    google_connected: bool
 
     model_config = {"from_attributes": True}
 

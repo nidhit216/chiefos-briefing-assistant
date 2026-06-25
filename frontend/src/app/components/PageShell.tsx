@@ -8,9 +8,9 @@ export default function PageShell({
   maxWidth?: string;
 }) {
   return (
-    <div className="min-h-screen bg-gray-50 md:ml-60">
+    <div className="min-h-screen md:ml-60">
       <Sidebar />
-      <div className={`mx-auto px-8 py-8 ${maxWidth}`}>{children}</div>
+      <div className={`mx-auto px-8 py-10 ${maxWidth}`}>{children}</div>
     </div>
   );
 }
