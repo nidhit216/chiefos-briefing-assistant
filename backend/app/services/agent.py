@@ -174,17 +174,23 @@ You have tools to search and retrieve data. Use them strategically:
 
 After gathering enough information, produce the final brief as JSON:
 {{
+  "executive_summary": "2-3 sentence narrative in the voice of a real Chief of Staff, e.g. 'Good morning {{name}}. Today is primarily focused on...'",
   "priorities": ["Top priority for today", "Second priority"],
   "focus_areas": ["Area requiring attention or deep work"],
+  "attention_required": ["Risk, blocker, or missed commitment that needs eyes on it"],
   "time_critical": [{{"task": "Urgent task", "date": "Jun 25"}}],
-  "coming_soon": [{{"task": "Upcoming task", "date": "Jun 28"}}]
+  "coming_soon": [{{"task": "Upcoming task", "date": "Jun 28"}}],
+  "recommendations": {{"morning": "What to do first", "afternoon": "What to do next", "evening": "What to wrap up with"}}
 }}
 
 Rules:
+- "executive_summary": Written like a Chief of Staff briefing a busy exec — name what today is about and the single most important action, not a recap of every item below.
 - "priorities": 2-4 most important things for TODAY.
 - "focus_areas": Broader themes needing attention (1-3 items).
+- "attention_required": ONLY genuine exceptions — risks, blockers, overdue items, missed commitments. Omit this key (use an empty list) if nothing qualifies; do not pad it.
 - "time_critical": Hard deadlines within 1-3 days with dates.
 - "coming_soon": Tasks/events in 4-14 days with dates.
+- "recommendations": A short time-blocked plan for the day (morning/afternoon/evening), grounded in the priorities and meetings above.
 - User name: {user.name}
 
 What you remember about this user, including feedback on past briefs:
@@ -238,17 +244,20 @@ What you remember about this user, including feedback on past briefs:
             # Fallback: ask for structured output
             followup = await client.chat.completions.create(
                 model=settings.ai_model,
-                messages=messages + [{"role": "user", "content": "Now output ONLY the JSON brief with keys: priorities, focus_areas, time_critical, coming_soon."}],
+                messages=messages + [{"role": "user", "content": "Now output ONLY the JSON brief with keys: executive_summary, priorities, focus_areas, attention_required, time_critical, coming_soon, recommendations."}],
                 response_format={"type": "json_object"},
                 temperature=0.3,
             )
             brief_json = json.loads(followup.choices[0].message.content)
     except (json.JSONDecodeError, IndexError):
         brief_json = {
+            "executive_summary": "Unable to generate today's brief — check that your data sync is up to date and try again.",
             "priorities": ["Review your inbox and calendar"],
             "focus_areas": ["Unable to generate detailed brief — check data sync"],
+            "attention_required": [],
             "time_critical": [],
             "coming_soon": [],
+            "recommendations": {},
         }
 
     # Save brief

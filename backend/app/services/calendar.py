@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.user import User
 from app.models.calendar_event import CalendarEvent
+from app.services.google_auth import ensure_valid_access_token
 
 CALENDAR_API = "https://www.googleapis.com/calendar/v3"
 
@@ -21,7 +22,10 @@ def _parse_event_time(time_dict: dict) -> datetime:
 
 async def sync_calendar(user: User, db: AsyncSession) -> None:
     """Fetch upcoming calendar events and store metadata locally."""
-    headers = {"Authorization": f"Bearer {user.google_access_token}"}
+    access_token = await ensure_valid_access_token(user, db)
+    if not access_token:
+        return
+    headers = {"Authorization": f"Bearer {access_token}"}
     now = datetime.now(timezone.utc).isoformat()
 
     async with httpx.AsyncClient() as client:

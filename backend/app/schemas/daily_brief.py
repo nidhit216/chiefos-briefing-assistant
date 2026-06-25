@@ -3,18 +3,12 @@ from datetime import date, datetime
 from pydantic import BaseModel
 
 
-class BriefContent(BaseModel):
-    summary: str
-    priorities: list[str]
-    risks: list[str]
-    focus_areas: list[str]
-    follow_ups: list[str]
-
-
 class DailyBriefRead(BaseModel):
     id: uuid.UUID
     brief_date: date
-    content: str  # JSON string of BriefContent
+    # JSON string with keys: executive_summary, priorities, focus_areas,
+    # attention_required, time_critical, coming_soon, recommendations.
+    content: str
     created_at: datetime
 
     model_config = {"from_attributes": True}

@@ -25,6 +25,10 @@ class Settings(BaseSettings):
     # MCP
     mcp_server_port: int = 8001
 
+    # Scheduled sync — off by default; enable once you've confirmed it behaves in logs.
+    scheduled_sync_enabled: bool = False
+    scheduled_sync_interval_minutes: int = 60
+
     model_config = {"env_file": ".env"}
 
 

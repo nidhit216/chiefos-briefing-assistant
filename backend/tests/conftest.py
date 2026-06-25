@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from httpx import AsyncClient, ASGITransport
@@ -45,6 +46,9 @@ async def _create_user(name="Test User"):
             google_id=f"google-{unique}",
             google_access_token="fake-access-token",
             google_refresh_token="fake-refresh-token",
+            # Far in the future so existing tests don't trip the token-refresh path by default;
+            # tests that need expired-token behavior set this explicitly.
+            google_token_expiry=datetime.now(timezone.utc) + timedelta(hours=1),
         )
         session.add(user)
         await session.commit()

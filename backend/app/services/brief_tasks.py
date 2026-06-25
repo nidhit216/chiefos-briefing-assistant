@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.user import User
 from app.models.brief_task import BriefTask
 
-TASK_CATEGORIES = ("priorities", "focus_areas", "time_critical", "coming_soon")
+TASK_CATEGORIES = ("priorities", "focus_areas", "attention_required", "time_critical", "coming_soon")
 
 
 async def sync_brief_tasks(user: User, brief_json: dict, db: AsyncSession) -> None:

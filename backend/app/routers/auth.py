@@ -1,3 +1,5 @@
+from datetime import datetime, timedelta, timezone
+
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse
 from sqlalchemy import select
@@ -67,6 +69,8 @@ async def callback(code: str, db: AsyncSession = Depends(get_db)):
             raise HTTPException(status_code=400, detail="Failed to get user info")
         userinfo = userinfo_resp.json()
 
+    token_expiry = datetime.now(timezone.utc) + timedelta(seconds=tokens.get("expires_in", 3600))
+
     # Upsert user
     result = await db.execute(select(User).where(User.google_id == userinfo["id"]))
     user = result.scalar_one_or_none()
@@ -78,10 +82,12 @@ async def callback(code: str, db: AsyncSession = Depends(get_db)):
             google_id=userinfo["id"],
             google_access_token=tokens["access_token"],
             google_refresh_token=tokens.get("refresh_token"),
+            google_token_expiry=token_expiry,
         )
         db.add(user)
     else:
         user.google_access_token = tokens["access_token"]
+        user.google_token_expiry = token_expiry
         if tokens.get("refresh_token"):
             user.google_refresh_token = tokens["refresh_token"]
 

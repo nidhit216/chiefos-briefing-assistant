@@ -5,13 +5,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.user import User
 from app.models.email import Email
+from app.services.google_auth import ensure_valid_access_token
 
 GMAIL_API = "https://gmail.googleapis.com/gmail/v1/users/me"
 
 
 async def sync_emails(user: User, db: AsyncSession) -> None:
     """Fetch recent emails from Gmail and store metadata locally."""
-    headers = {"Authorization": f"Bearer {user.google_access_token}"}
+    access_token = await ensure_valid_access_token(user, db)
+    if not access_token:
+        return
+    headers = {"Authorization": f"Bearer {access_token}"}
 
     async with httpx.AsyncClient() as client:
         # Fetch message list (only Primary and Updates categories)

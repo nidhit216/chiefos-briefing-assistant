@@ -11,7 +11,7 @@ class BriefTask(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), index=True)
-    category: Mapped[str] = mapped_column(String(20))  # "priorities" | "focus_areas" | "time_critical" | "coming_soon"
+    category: Mapped[str] = mapped_column(String(20))  # "priorities" | "focus_areas" | "attention_required" | "time_critical" | "coming_soon"
     task: Mapped[str] = mapped_column(Text)
     date_label: Mapped[str | None] = mapped_column(String(50), nullable=True)
     completed: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())

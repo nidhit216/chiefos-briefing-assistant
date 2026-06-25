@@ -33,7 +33,6 @@ export default function DashboardPage() {
   const [syncingCalendar, setSyncingCalendar] = useState(false);
   const [refreshingNotes, setRefreshingNotes] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
-  const [briefMode, setBriefMode] = useState<"agent" | "simple">("agent");
   const briefAbortRef = useRef<AbortController | null>(null);
   const calendarAbortRef = useRef<AbortController | null>(null);
   const emailsAbortRef = useRef<AbortController | null>(null);
@@ -111,10 +110,13 @@ export default function DashboardPage() {
           if (briefData) {
             const parsed = JSON.parse(briefData.content);
             setBrief({
+              executive_summary: parsed.executive_summary || "",
               priorities: parsed.priorities || [],
               focus_areas: parsed.focus_areas || [],
+              attention_required: parsed.attention_required || [],
               time_critical: parsed.time_critical || [],
               coming_soon: parsed.coming_soon || [],
+              recommendations: parsed.recommendations || {},
             });
           }
         }
@@ -154,15 +156,6 @@ export default function DashboardPage() {
               Today&apos;s Brief
             </h2>
             <div className="flex items-center gap-2">
-              <select
-                value={briefMode}
-                onChange={(e) => setBriefMode(e.target.value as "agent" | "simple")}
-                className="text-xs border border-gray-200 rounded-md px-2 py-1 text-gray-600"
-                title="Brief generation mode"
-              >
-                <option value="agent">Agent (RAG)</option>
-                <option value="simple">Simple</option>
-              </select>
               {generating ? (
                 <button
                   onClick={() => briefAbortRef.current?.abort()}
@@ -182,7 +175,7 @@ export default function DashboardPage() {
                     const controller = new AbortController();
                     briefAbortRef.current = controller;
                     try {
-                      const res = await apiFetch(`/briefs/generate?mode=${briefMode}`, {
+                      const res = await apiFetch(`/briefs/generate`, {
                         method: "POST",
                         signal: controller.signal,
                       });
@@ -190,10 +183,13 @@ export default function DashboardPage() {
                         const data: DailyBrief = await res.json();
                         const parsed = JSON.parse(data.content);
                         setBrief({
+                          executive_summary: parsed.executive_summary || "",
                           priorities: parsed.priorities || [],
                           focus_areas: parsed.focus_areas || [],
+                          attention_required: parsed.attention_required || [],
                           time_critical: parsed.time_critical || [],
                           coming_soon: parsed.coming_soon || [],
+                          recommendations: parsed.recommendations || {},
                         });
                         const tasksRes = await apiFetch("/briefs/tasks");
                         if (tasksRes.ok) setTasks(await tasksRes.json());
@@ -226,6 +222,12 @@ export default function DashboardPage() {
             </div>
           </div>
           {brief ? (
+            <>
+            {brief.executive_summary && (
+              <p className="text-gray-800 leading-relaxed mb-5 pb-5 border-b border-gray-100">
+                {brief.executive_summary}
+              </p>
+            )}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <h3 className="font-medium text-green-700 mb-2">Priorities for Today</h3>
@@ -326,6 +328,52 @@ export default function DashboardPage() {
                 </ul>
               </div>
             </div>
+
+            {tasks.some((t) => t.category === "attention_required") && (
+              <div className="mt-5 pt-5 border-t border-gray-100">
+                <h3 className="font-medium text-amber-800 mb-2 flex items-center gap-1.5">
+                  <span aria-hidden>⚠️</span> Attention Required
+                </h3>
+                <ul className="space-y-1">
+                  {tasks
+                    .filter((t) => t.category === "attention_required")
+                    .map((item) => (
+                      <motion.li layout key={item.id} className="flex items-start gap-2">
+                        <label className="flex items-start gap-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={item.completed}
+                            onChange={() => toggleTaskCompleted(item)}
+                            className="mt-1 h-4 w-4 rounded border-gray-300 text-amber-600 focus:ring-amber-500"
+                          />
+                          <span className={item.completed ? "line-through text-gray-400" : "text-amber-900"}>
+                            {item.task}
+                          </span>
+                        </label>
+                      </motion.li>
+                    ))}
+                </ul>
+              </div>
+            )}
+
+            {(brief.recommendations.morning || brief.recommendations.afternoon || brief.recommendations.evening) && (
+              <div className="mt-5 pt-5 border-t border-gray-100">
+                <h3 className="font-medium text-gray-900 mb-2">Recommended Schedule</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  {(["morning", "afternoon", "evening"] as const)
+                    .filter((slot) => brief.recommendations[slot])
+                    .map((slot) => (
+                      <div key={slot}>
+                        <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">
+                          {slot}
+                        </p>
+                        <p className="text-sm text-gray-700">{brief.recommendations[slot]}</p>
+                      </div>
+                    ))}
+                </div>
+              </div>
+            )}
+            </>
           ) : (
             <>
             <p className="text-gray-500">
@@ -428,12 +476,17 @@ export default function DashboardPage() {
           )}
         </section>
 
-        {/* Upcoming Meetings */}
-        <section className="bg-white rounded-xl shadow p-6">
-          <div className="flex justify-between items-center mb-4">
-            <h2 className="text-xl font-semibold text-gray-900">
+        {/* Supporting Context: secondary to the brief — raw calendar/email feeds, not synthesis */}
+        <section className="lg:col-span-2">
+          <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">
+            Supporting Context
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="bg-white rounded-xl border border-gray-200 p-5">
+          <div className="flex justify-between items-center mb-3">
+            <h3 className="text-sm font-semibold text-gray-700">
               Upcoming Meetings
-            </h2>
+            </h3>
             {syncingCalendar ? (
               <button
                 onClick={() => calendarAbortRef.current?.abort()}
@@ -506,14 +559,13 @@ export default function DashboardPage() {
           ) : (
             <p className="text-gray-500">No upcoming meetings.</p>
           )}
-        </section>
+          </div>
 
-        {/* Recent Emails */}
-        <section className="bg-white rounded-xl shadow p-6">
-          <div className="flex justify-between items-center mb-4">
-            <h2 className="text-xl font-semibold text-gray-900">
+          <div className="bg-white rounded-xl border border-gray-200 p-5">
+          <div className="flex justify-between items-center mb-3">
+            <h3 className="text-sm font-semibold text-gray-700">
               Recent Emails
-            </h2>
+            </h3>
             {syncingEmails ? (
               <button
                 onClick={() => emailsAbortRef.current?.abort()}
@@ -583,6 +635,8 @@ export default function DashboardPage() {
           ) : (
             <p className="text-gray-500">No emails synced yet.</p>
           )}
+          </div>
+          </div>
         </section>
       </div>
     </PageShell>

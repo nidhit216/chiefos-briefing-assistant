@@ -16,6 +16,16 @@ BRIEF_JSON = {
     "coming_soon": [{"task": "Plan offsite", "date": "Jul 1"}],
 }
 
+AGENT_BRIEF_JSON = {
+    "executive_summary": "Good morning. Today is about the launch.",
+    "priorities": ["Ship the launch"],
+    "focus_areas": ["Customer feedback"],
+    "attention_required": ["Invoice from Acme is overdue"],
+    "time_critical": [{"task": "File the report", "date": "Jun 25"}],
+    "coming_soon": [{"task": "Plan offsite", "date": "Jul 1"}],
+    "recommendations": {"morning": "Ship the launch", "afternoon": "Review feedback", "evening": "Wrap up"},
+}
+
 
 def fake_simple_client():
     client = MagicMock()
@@ -25,12 +35,12 @@ def fake_simple_client():
     return client
 
 
-def fake_agent_client():
+def fake_agent_client_with(brief_json):
     """No tool calls — the agent loop exits immediately with the final JSON brief."""
     client = MagicMock()
     response = MagicMock()
     response.choices = [
-        MagicMock(message=MagicMock(content=json.dumps(BRIEF_JSON), tool_calls=None))
+        MagicMock(message=MagicMock(content=json.dumps(brief_json), tool_calls=None))
     ]
     client.chat.completions.create = AsyncMock(return_value=response)
     return client
@@ -52,7 +62,7 @@ async def test_generate_brief_persists_brief_tasks(test_user, monkeypatch):
 
 
 async def test_generate_brief_with_agent_persists_brief_tasks(test_user, monkeypatch):
-    monkeypatch.setattr(agent, "get_openai_client", fake_agent_client)
+    monkeypatch.setattr(agent, "get_openai_client", lambda: fake_agent_client_with(AGENT_BRIEF_JSON))
 
     async with async_session() as session:
         await agent.generate_brief_with_agent(test_user, session)
@@ -64,3 +74,15 @@ async def test_generate_brief_with_agent_persists_brief_tasks(test_user, monkeyp
     by_category = {t.category: t.task for t in tasks}
     assert by_category["time_critical"] == "File the report"
     assert by_category["coming_soon"] == "Plan offsite"
+    assert by_category["attention_required"] == "Invoice from Acme is overdue"
+
+
+async def test_generate_brief_with_agent_persists_executive_summary_and_recommendations(test_user, monkeypatch):
+    monkeypatch.setattr(agent, "get_openai_client", lambda: fake_agent_client_with(AGENT_BRIEF_JSON))
+
+    async with async_session() as session:
+        brief = await agent.generate_brief_with_agent(test_user, session)
+
+    saved = json.loads(brief.content)
+    assert saved["executive_summary"] == AGENT_BRIEF_JSON["executive_summary"]
+    assert saved["recommendations"] == AGENT_BRIEF_JSON["recommendations"]

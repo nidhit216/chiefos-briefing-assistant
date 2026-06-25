@@ -36,10 +36,13 @@ export interface Note {
 }
 
 export interface BriefContent {
+  executive_summary: string;
   priorities: string[];
   focus_areas: string[];
+  attention_required: string[];
   time_critical: { task: string; date: string }[];
   coming_soon: { task: string; date: string }[];
+  recommendations: { morning?: string; afternoon?: string; evening?: string };
 }
 
 export interface DailyBrief {
@@ -84,7 +87,7 @@ export interface Memory {
 
 export interface BriefTask {
   id: string;
-  category: "priorities" | "focus_areas" | "time_critical" | "coming_soon";
+  category: "priorities" | "focus_areas" | "attention_required" | "time_critical" | "coming_soon";
   task: string;
   date_label: string | null;
   completed: boolean;
