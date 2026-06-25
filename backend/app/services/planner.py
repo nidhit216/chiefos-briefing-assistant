@@ -28,13 +28,16 @@ async def generate_brief(user: User, db: AsyncSession) -> DailyBrief:
     """Generate a daily brief using the AI planner agent."""
     # Gather context
     emails_result = await db.execute(
-        select(Email).where(Email.user_id == user.id).order_by(Email.received_at.desc()).limit(20)
+        select(Email)
+        .where(Email.user_id == user.id, Email.archived == False, Email.low_signal == False)
+        .order_by(Email.received_at.desc())
+        .limit(20)
     )
     emails = emails_result.scalars().all()
 
     events_result = await db.execute(
         select(CalendarEvent)
-        .where(CalendarEvent.user_id == user.id)
+        .where(CalendarEvent.user_id == user.id, CalendarEvent.archived == False)
         .where(CalendarEvent.start_time >= datetime.now(timezone.utc))
         .order_by(CalendarEvent.start_time.asc())
         .limit(10)
@@ -80,7 +83,8 @@ Respond with ONLY valid JSON in this exact format:
 Rules:
 - "executive_summary": Written like a Chief of Staff briefing a busy exec — name what today is about and the single most important action, not a recap of every item below.
 - "attention_required": ONLY genuine exceptions — risks, blockers, overdue items, missed commitments.
-  - One entry per distinct underlying issue. Before adding an item, check whether it's just a reworded version of one already in the list or of something raised in a prior brief (see memory below) — merge those into a single entry instead of repeating the same fact in different words.
+  - Urgency gate: before adding anything, ask whether a specific person is actually waiting on a decision or reply, with a deadline and consequence specific to the user — not generic platform boilerplate. Automated account/compliance reminders, "act now or lose access" nags, job-board digests, and recruiter outreach are written to sound urgent by design; restate their real stakes plainly instead of repeating their dramatic phrasing as fact, and if nothing genuine remains, leave the list empty rather than padding it with these.
+  - One entry per distinct underlying issue, even if it surfaces from multiple emails or sources. Before adding an item, check whether it's just a reworded version of one already in the list, of something already added from a different email on the same topic, or of something raised in a prior brief (see memory below) — merge those into a single entry instead of repeating the same fact in different words.
   - Each entry is one sentence following the template: <what> — <deadline or time window if any> — <consequence if ignored>. Use the same concrete nouns/phrasing each time the same recurring issue appears across days so it stays recognizable as the same item over time.
   - Order the array by urgency-and-impact together, not by the order things appear in the source data: weigh how soon it's due AND how much actually goes wrong if ignored. A small task due in hours can outrank a vague long-term risk; a high-impact missed commitment can outrank a low-stakes same-day task. Put the single most urgent-and-important item first.
   - Cap at 5 entries. If more genuinely qualify, keep only the 5 most urgent-and-important and drop the rest.

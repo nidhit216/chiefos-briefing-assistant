@@ -16,3 +16,4 @@ class Email(Base):
     snippet: Mapped[str] = mapped_column(String(2000))
     received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     archived: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    low_signal: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")

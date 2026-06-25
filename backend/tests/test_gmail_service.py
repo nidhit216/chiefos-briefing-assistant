@@ -9,8 +9,16 @@ from app.services import gmail as gmail_service
 from tests.helpers import FakeResponse, fake_async_client_factory
 
 
+async def _fake_classify_low_signal(candidates):
+    return {}
+
+
 async def run_sync(test_user, monkeypatch, responses):
     monkeypatch.setattr(gmail_service.httpx, "AsyncClient", fake_async_client_factory(responses))
+    # Sync now runs ambiguous (non-heuristic-matched) emails through a batched AI
+    # classification call — stub it out so these tests stay network-free, same as
+    # how test_agent.py stubs get_openai_client wherever AI calls are exercised.
+    monkeypatch.setattr(gmail_service, "classify_low_signal", _fake_classify_low_signal)
     async with async_session() as session:
         await gmail_service.sync_emails(test_user, session)
 

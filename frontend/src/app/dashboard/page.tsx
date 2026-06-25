@@ -221,16 +221,25 @@ export default function DashboardPage() {
 
         const now = new Date();
         if (emailsRes.ok) {
-          setEmails(await emailsRes.json());
-          setLastUpdated((prev) => ({ ...prev, emails: now }));
+          const emailsData = await emailsRes.json();
+          setEmails(emailsData);
+          if (emailsData.length > 0) {
+            setLastUpdated((prev) => ({ ...prev, emails: now }));
+          }
         }
         if (eventsRes.ok) {
-          setEvents(await eventsRes.json());
-          setLastUpdated((prev) => ({ ...prev, calendar: now }));
+          const eventsData = await eventsRes.json();
+          setEvents(eventsData);
+          if (eventsData.length > 0) {
+            setLastUpdated((prev) => ({ ...prev, calendar: now }));
+          }
         }
         if (notesRes.ok) {
-          setNotes(await notesRes.json());
-          setLastUpdated((prev) => ({ ...prev, notes: now }));
+          const notesData = await notesRes.json();
+          setNotes(notesData);
+          if (notesData.length > 0) {
+            setLastUpdated((prev) => ({ ...prev, notes: now }));
+          }
         }
       } catch (_) {
         router.push("/login");
