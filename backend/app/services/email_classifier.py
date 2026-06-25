@@ -12,10 +12,22 @@ settings = get_settings()
 _NOISE_SENDER_PATTERNS = [
     r"no-?reply@",
     r"do-?not-?reply@",
+    r"noreply@",
+    r"@ses\.",                    # ← Binance SES and similar AWS SES senders
     r"alerts\.",
     r"alerts@",
     r"notifications@",
     r"mailer@",
+    r"@nsdl\.",                   # ← NSDL registrar (BSE postal ballots)
+    r"@karvy\.",                  # ← Karvy registrar
+    r"@kfintech\.",               # ← KFin Technologies registrar
+    r"@evoting\.",                # ← e-voting platforms
+    r"@mail\.",                   # ← bulk mail subdomains (mail.michaelpage etc)
+    r"reply\.cutshort\.io",       # ← Cutshort automated recruiter replies
+    r"@cutshort\.io",
+    r"@linkedin\.com",
+    r"@glassdoor\.com",
+    r"@naukri\.com",
 ]
 
 _NOISE_SUBJECT_PATTERNS = [
@@ -24,6 +36,21 @@ _NOISE_SUBJECT_PATTERNS = [
     r"update your kyc",
     r"verify your account",
     r"questionnaire.*pending",
+    r"postal ballot",             # ← BSE/registrar voting notices
+    r"e-?voting",                 # ← all e-voting notices
+    r"remote e-?voting",
+    r"annual general meeting",
+    r"\bagm\b",
+    r"login from a new device",   # ← Notion/platform security alerts
+    r"new sign.?in",
+    r"new login",
+    r"security alert",
+    r"new device",
+    r"someone signed in",
+    r"account (access|security|verification)",
+    r"complete your kyc",
+    r"update.*kyc",
+    r"reminder.*kyc",
 ]
 
 
@@ -58,11 +85,16 @@ async def classify_low_signal(candidates: list[dict]) -> dict[int, bool]:
                 {
                     "role": "system",
                     "content": (
-                        "Classify each numbered email as 'actionable' (a real person or "
-                        "service expects a specific decision or response from the recipient, "
-                        "with genuine personal stakes) or 'low_signal' (automated notifications, "
-                        "marketing, job-board digests, bulk platform reminders, newsletters). "
-                        'Respond with ONLY JSON: {"results": [{"index": 0, "type": "actionable"}]}'
+                        "You are classifying emails for a personal chief of staff app. "
+                        "Be aggressive about marking things low_signal. "
+                        "ALWAYS mark as low_signal: e-voting notices, postal ballots, "
+                        "AGM notices, KYC reminders, new device/login security alerts from "
+                        "platforms (Notion, GitHub, Google, Binance etc), job board digests, "
+                        "recruiter mass outreach, newsletter-style updates from companies. "
+                        "Only mark 'actionable' if a named individual who knows this person "
+                        "personally is waiting on a specific reply or decision. "
+                        "When in doubt, mark low_signal. "
+                        'Respond ONLY with JSON: {"results": [{"index": 0, "type": "low_signal"}]}'
                     ),
                 },
                 {"role": "user", "content": prompt_items},

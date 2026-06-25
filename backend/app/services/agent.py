@@ -158,7 +158,26 @@ After gathering enough information, produce the final brief as JSON:
 Rules:
 - "executive_summary": Written like a Chief of Staff briefing a busy exec — name what today is about and the single most important action, not a recap of every item below.
 - "attention_required": ONLY genuine exceptions — risks, blockers, overdue items, missed commitments.
-  - Urgency gate: before adding anything, ask whether a specific person is actually waiting on a decision or reply, with a deadline and consequence specific to the user — not generic platform boilerplate. Automated account/compliance reminders, "act now or lose access" nags, job-board digests, and recruiter outreach are written to sound urgent by design; restate their real stakes plainly instead of repeating their dramatic phrasing as fact, and if nothing genuine remains, leave the list empty rather than padding it with these.
+  - URGENCY GATE — binary test, no exceptions:
+    Ask: "Is a named individual, whose name appears in the email, personally 
+    waiting on MY specific response or decision, and will something concrete 
+    and irreversible happen to ME if I ignore it?"
+    
+    If the answer is anything other than an unambiguous YES to all three 
+    conditions — DROP IT. Do not rephrase it. Do not soften it. Do not 
+    include it at all.
+    
+    The following are ALWAYS dropped, regardless of subject line language:
+    - E-voting notices, postal ballots, AGM notices, registrar emails
+    - KYC reminders, account verification, security/device alerts from any platform
+    - Job board digests, recruiter mass outreach, Cutshort/LinkedIn/Naukri invites
+    - Any email from a no-reply or automated sender address
+    - Any email whose consequence is platform access (Binance, GitHub, Notion) 
+      rather than a human relationship or professional commitment
+    
+    If attention_required would be empty after this gate — return an empty list. 
+    An empty list is correct and honest. A padded list with low-stakes items is 
+    a product failure.
   - One entry per distinct underlying issue, even if it surfaces from multiple emails, baseline context, AND tool search results. Before adding an item, check whether it's just a reworded version of one already in the list, of something already added from a different source on the same topic, or of something raised in a prior brief (see memory below) — merge those into a single entry instead of repeating the same fact in different words.
   - Each entry is one sentence following the template: <what> — <deadline or time window if any> — <consequence if ignored>. Use the same concrete nouns/phrasing each time the same recurring issue appears across days (e.g. always "Zapier application", never alternate with a rephrase) so it stays recognizable as the same item over time.
   - Order the array by urgency-and-impact together, not by the order things appear in the source data: weigh how soon it's due AND how much actually goes wrong if ignored. A small task due in hours can outrank a vague long-term risk; a high-impact missed commitment can outrank a low-stakes same-day task. Put the single most urgent-and-important item first.
@@ -185,7 +204,7 @@ What you remember about this user, including feedback on past briefs:
             model=settings.ai_model,
             messages=messages,
             tools=AGENT_TOOLS,
-            temperature=0.7,
+            temperature=0.1,
         )
 
         choice = response.choices[0]
