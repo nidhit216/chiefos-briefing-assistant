@@ -14,6 +14,9 @@ from app.models.memory import Memory
 from app.services.rag import semantic_search
 from app.services.ai_client import get_openai_client
 from app.services.brief_tasks import sync_brief_tasks
+from app.services.datetime_utils import humanize_datetime
+from app.services.attention_guardrail import enforce_positive_framing
+from app.services.email_classifier import email_visibility_filter
 
 settings = get_settings()
 
@@ -110,13 +113,13 @@ async def generate_brief_with_agent(user: User, db: AsyncSession) -> DailyBrief:
         .limit(8)
     )
     events_context = "\n".join(
-        f"- {e.title} at {e.start_time} | Attendees: {e.attendees}"
+        f"- {e.title} at {humanize_datetime(e.start_time, user.timezone)} | Attendees: {e.attendees}"
         for e in events_result.scalars().all()
     ) or "No upcoming events."
 
     emails_result = await db.execute(
         select(Email)
-        .where(Email.user_id == user.id, Email.archived == False, Email.low_signal == False)
+        .where(Email.user_id == user.id, email_visibility_filter())
         .order_by(Email.received_at.desc())
         .limit(12)
     )
@@ -150,7 +153,7 @@ specific topic, thread, or note that isn't already covered above — don't searc
 After gathering enough information, produce the final brief as JSON:
 {{
   "executive_summary": "2-3 sentence narrative in the voice of a real Chief of Staff, e.g. 'Good morning {{name}}. Today is primarily focused on...'",
-  "attention_required": ["<what> — <deadline/time window, if any> — <consequence if ignored>"],
+  "attention_required": ["<what> — <deadline/time window, if any> — <what's gained by handling it now>"],
   "recommendations": {{"morning": "What to do first", "afternoon": "What to do next", "evening": "What to wrap up with"}},
   "focus_breakdown": [{{"label": "Product", "percent": 70}}, {{"label": "Career", "percent": 20}}, {{"label": "Personal", "percent": 10}}]
 }}
@@ -179,7 +182,7 @@ Rules:
     An empty list is correct and honest. A padded list with low-stakes items is 
     a product failure.
   - One entry per distinct underlying issue, even if it surfaces from multiple emails, baseline context, AND tool search results. Before adding an item, check whether it's just a reworded version of one already in the list, of something already added from a different source on the same topic, or of something raised in a prior brief (see memory below) — merge those into a single entry instead of repeating the same fact in different words.
-  - Each entry is one sentence following the template: <what> — <deadline or time window if any> — <consequence if ignored>. Use the same concrete nouns/phrasing each time the same recurring issue appears across days (e.g. always "Zapier application", never alternate with a rephrase) so it stays recognizable as the same item over time.
+  - Each entry is one sentence following the template: <what> — <deadline or time window if any> — <what's gained by handling it now>. Frame the third clause as the positive outcome of acting, not the penalty for ignoring it — e.g. "secures your spot in the cohort" rather than "you'll miss the cohort", "keeps the launch on track" rather than "launch will be delayed". Use the same concrete nouns/phrasing each time the same recurring issue appears across days (e.g. always "Zapier application", never alternate with a rephrase) so it stays recognizable as the same item over time.
   - Order the array by urgency-and-impact together, not by the order things appear in the source data: weigh how soon it's due AND how much actually goes wrong if ignored. A small task due in hours can outrank a vague long-term risk; a high-impact missed commitment can outrank a low-stakes same-day task. Put the single most urgent-and-important item first.
   - Cap at 5 entries. If more genuinely qualify, keep only the 5 most urgent-and-important and drop the rest.
   - Omit this key (use an empty list) if nothing qualifies; do not pad it.
@@ -244,6 +247,10 @@ What you remember about this user, including feedback on past briefs:
             "recommendations": {},
             "focus_breakdown": [],
         }
+
+    brief_json["attention_required"] = enforce_positive_framing(
+        brief_json.get("attention_required") or []
+    )
 
     # Save brief
     brief = DailyBrief(

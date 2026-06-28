@@ -3,7 +3,10 @@ excluded from brief generation context without losing the data entirely."""
 import json
 import re
 
+from sqlalchemy import and_
+
 from app.config import get_settings
+from app.models.email import Email
 from app.services.ai_client import get_openai_client
 
 settings = get_settings()
@@ -52,6 +55,13 @@ _NOISE_SUBJECT_PATTERNS = [
     r"update.*kyc",
     r"reminder.*kyc",
 ]
+
+
+def email_visibility_filter():
+    """Single source of truth for 'is this email noise': excludes archived and
+    low_signal emails. Used by both the dashboard brief and the Ask/search RAG path
+    so any new surface gets the same exclusions for free."""
+    return and_(Email.archived == False, Email.low_signal == False)
 
 
 def matches_noise_heuristic(sender: str, subject: str) -> bool:

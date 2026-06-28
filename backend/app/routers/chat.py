@@ -14,7 +14,7 @@ from app.models.user import User
 from app.models.chat import ChatMessage
 from app.models.daily_brief import DailyBrief
 from app.models.memory import Memory
-from app.services.rag import get_relevant_context
+from app.services.rag import get_relevant_context, semantic_search
 from app.services.ai_client import get_openai_client
 
 settings = get_settings()
@@ -25,12 +25,29 @@ router = APIRouter()
 class ChatRequest(BaseModel):
     message: str
     session_id: str | None = None  # Optional: to maintain conversation context
+    source_type: str | None = None  # Optional UI filter pill — overrides the model's own guess
+
+
+class DraftPayload(BaseModel):
+    to: str
+    subject: str
+    body: str
+
+
+class SourceItem(BaseModel):
+    id: str
+    source_type: str
+    source_id: str
+    content: str
+    similarity: float
 
 
 class ChatResponse(BaseModel):
-    reply: str
+    reply: str | None = None
     session_id: str
     sources_used: int
+    sources: list[SourceItem] | None = None
+    draft: DraftPayload | None = None
 
 
 SYSTEM_PROMPT = """You are ChiefOS, an AI Chief of Staff assistant. You help the user understand their schedule, emails, priorities, and notes.
@@ -41,12 +58,12 @@ Rules:
 - Be concise and actionable.
 - If you don't have enough context to answer, say so honestly.
 - Reference specific emails, events, or notes when relevant.
-- You can help draft replies, summarize threads, identify conflicts, and suggest priorities.
+- Decide for yourself, from the meaning of the request and the context available, whether the user wants to: (a) find/review existing items — call search_sources; (b) get a draft email written — call compose_draft; or (c) just get a conversational answer — reply directly. Don't rely on specific wording; infer intent.
 - Today's date is {today}.
 - The user's name is {user_name}.
 """
 
-MEMORY_TOOLS = [
+ACTION_TOOLS = [
     {
         "type": "function",
         "function": {
@@ -63,7 +80,48 @@ MEMORY_TOOLS = [
                 "required": ["content"],
             },
         },
-    }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "search_sources",
+            "description": "Search the user's emails, calendar events, and notes for items relevant to their request. Use this when the user wants to find, review, or get a list of existing items — not when they want something written for them.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "The search query, rewritten to be specific if that helps retrieval.",
+                    },
+                    "source_type": {
+                        "type": "string",
+                        "enum": ["email", "calendar_event", "note"],
+                        "description": "Optional filter to a single source type.",
+                    },
+                },
+                "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "compose_draft",
+            "description": "Generate a draft email for the user to review, edit, and send. Use this when the user wants an email drafted, written, composed, or replied to on their behalf — not when they're asking to find an existing email.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "to": {
+                        "type": "string",
+                        "description": "Recipient name or email address, inferred from context if not stated explicitly.",
+                    },
+                    "subject": {"type": "string"},
+                    "body": {"type": "string", "description": "The full draft email body."},
+                },
+                "required": ["to", "subject", "body"],
+            },
+        },
+    },
 ]
 
 
@@ -122,15 +180,17 @@ async def chat(
         messages.append({"role": msg.role, "content": msg.content})
     messages.append({"role": "user", "content": request.message})
 
-    # Call LLM — give it a tool to save durable facts as long-term memory.
-    # Loop allows one round-trip for a tool call; chat never needs more than that.
+    # Call LLM — give it tools to save memories, search sources, or draft an email.
+    # The model decides which (if any) to use based on intent, not keyword matching.
     client = get_openai_client()
     reply = None
+    sources_result: list[dict] | None = None
+    draft_result: dict | None = None
     for _ in range(3):
         response = await client.chat.completions.create(
             model=settings.ai_model,
             messages=messages,
-            tools=MEMORY_TOOLS,
+            tools=ACTION_TOOLS,
             temperature=0.7,
             max_tokens=1000,
         )
@@ -143,22 +203,52 @@ async def chat(
         messages.append(choice.message)
         for tool_call in choice.message.tool_calls:
             args = json.loads(tool_call.function.arguments)
-            db.add(Memory(user_id=user.id, content=args["content"]))
+            name = tool_call.function.name
+
+            if name == "save_memory":
+                db.add(Memory(user_id=user.id, content=args["content"]))
+                tool_result = {"status": "saved"}
+            elif name == "search_sources":
+                sources_result = await semantic_search(
+                    query=args["query"],
+                    user_id=user.id,
+                    db=db,
+                    source_type=request.source_type or args.get("source_type"),
+                    limit=6,
+                )
+                tool_result = {
+                    "results": [
+                        {"source_type": r["source_type"], "content": r["content"][:300]}
+                        for r in sources_result
+                    ]
+                }
+            elif name == "compose_draft":
+                draft_result = args
+                tool_result = {"status": "drafted"}
+            else:
+                tool_result = {"status": "unknown_tool"}
+
             messages.append({
                 "role": "tool",
                 "tool_call_id": tool_call.id,
-                "content": json.dumps({"status": "saved"}),
+                "content": json.dumps(tool_result),
             })
 
-    if reply is None:
+    if reply is None and draft_result is None:
         reply = "Done."
 
     # Save to chat history
     db.add(ChatMessage(user_id=user.id, session_id=session_id, role="user", content=request.message))
-    db.add(ChatMessage(user_id=user.id, session_id=session_id, role="assistant", content=reply))
+    db.add(ChatMessage(user_id=user.id, session_id=session_id, role="assistant", content=reply or "Drafted an email."))
     await db.commit()
 
-    return ChatResponse(reply=reply, session_id=session_id, sources_used=sources_used)
+    return ChatResponse(
+        reply=reply,
+        session_id=session_id,
+        sources_used=sources_used,
+        sources=sources_result,
+        draft=DraftPayload(**draft_result) if draft_result else None,
+    )
 
 
 @router.get("/history")

@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -22,7 +23,11 @@ async def sync_user_calendar(
     await run_cancellable(request, sync_calendar(user, db))
     result = await db.execute(
         select(CalendarEvent)
-        .where(CalendarEvent.user_id == user.id, CalendarEvent.archived == False)
+        .where(
+            CalendarEvent.user_id == user.id,
+            CalendarEvent.archived == False,
+            CalendarEvent.start_time >= datetime.now(timezone.utc),
+        )
         .order_by(CalendarEvent.start_time.asc())
         .limit(20)
     )
@@ -36,7 +41,11 @@ async def get_events(
 ):
     result = await db.execute(
         select(CalendarEvent)
-        .where(CalendarEvent.user_id == user.id, CalendarEvent.archived == False)
+        .where(
+            CalendarEvent.user_id == user.id,
+            CalendarEvent.archived == False,
+            CalendarEvent.start_time >= datetime.now(timezone.utc),
+        )
         .order_by(CalendarEvent.start_time.asc())
         .limit(20)
     )

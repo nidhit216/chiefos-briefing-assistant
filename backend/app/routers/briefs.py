@@ -73,7 +73,17 @@ async def list_brief_tasks(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    query = select(BriefTask).where(BriefTask.user_id == user.id)
+    from datetime import datetime, date as date_cls, timezone
+
+    # Only surface tasks confirmed by the most recent brief generation. Rows are
+    # never deleted (so a completed checkmark survives regeneration), but stale
+    # rows from earlier days pile up as reworded near-duplicates whenever the LLM
+    # phrases the same recurring issue slightly differently day to day.
+    today_start = datetime.combine(date_cls.today(), datetime.min.time(), tzinfo=timezone.utc)
+    query = select(BriefTask).where(
+        BriefTask.user_id == user.id,
+        BriefTask.last_seen_at >= today_start,
+    )
     if category:
         query = query.where(BriefTask.category == category)
     result = await db.execute(

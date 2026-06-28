@@ -58,29 +58,18 @@ export interface SearchResult {
   similarity: number;
 }
 
-export interface ChatMessage {
-  role: "user" | "assistant";
-  content: string;
-  created_at?: string;
+export interface DraftPayload {
+  to: string;
+  subject: string;
+  body: string;
 }
 
 export interface ChatResponse {
-  reply: string;
+  reply: string | null;
   session_id: string;
   sources_used: number;
-}
-
-export interface ChatSession {
-  session_id: string;
-  last_message: string;
-  last_at: string;
-}
-
-export interface Memory {
-  id: string;
-  content: string;
-  brief_id: string | null;
-  created_at: string;
+  sources?: SearchResult[] | null;
+  draft?: DraftPayload | null;
 }
 
 export interface BriefTask {

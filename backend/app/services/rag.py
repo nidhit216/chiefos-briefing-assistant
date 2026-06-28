@@ -9,6 +9,7 @@ from app.models.embedding import DocumentEmbedding
 from app.models.email import Email
 from app.models.calendar_event import CalendarEvent
 from app.models.note import Note
+from app.services.email_classifier import email_visibility_filter
 
 settings = get_settings()
 
@@ -146,6 +147,20 @@ async def semantic_search(
     if source_type:
         filters.append(text("document_embeddings.source_type = :source_type"))
         params["source_type"] = source_type
+
+    # Mirror the dashboard's noise exclusion (see email_visibility_filter) so noisy
+    # emails (e-voting, KYC reminders, alerts, etc.) don't surface in search/chat either.
+    if source_type is None or source_type == "email":
+        visible_ids_result = await db.execute(
+            select(Email.id).where(Email.user_id == user_id, email_visibility_filter())
+        )
+        params["visible_email_ids"] = visible_ids_result.scalars().all()
+        filters.append(
+            text(
+                "(document_embeddings.source_type != 'email' "
+                "OR document_embeddings.source_id = ANY(CAST(:visible_email_ids AS uuid[])))"
+            )
+        )
 
     where_clause = " AND ".join(str(f) for f in filters)
 

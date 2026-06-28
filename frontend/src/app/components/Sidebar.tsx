@@ -26,35 +26,32 @@ const CONNECTED_APPS: ConnectedApp[] = [
 const navLinks = [
   {
     href: "/dashboard",
-    label: "Dashboard",
+    label: "Today's Brief",
+    subtitle: "Tell me what matters.",
     icon: (
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1h3a1 1 0 001-1V10M9 21h6" />
     ),
   },
   {
-    href: "/search",
-    label: "Search",
+    href: "/ask",
+    label: "Ask Anything",
+    subtitle: "Find or understand anything.",
     icon: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35M11 19a8 8 0 100-16 8 8 0 000 16z" />,
-  },
-  {
-    href: "/chat",
-    label: "Chat",
-    icon: (
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.86 9.86 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-    ),
   },
   {
     href: "/notes",
     label: "Notes",
+    subtitle: "Capture new information.",
     icon: (
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
     ),
   },
   {
     href: "/briefs",
-    label: "Briefs",
+    label: "History",
+    subtitle: "See what happened over time.",
     icon: (
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-2a4 4 0 014-4h4M5 13l4 4L19 7" />
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
     ),
   },
 ];
@@ -96,21 +93,28 @@ export default function Sidebar() {
 
       <nav className="flex flex-col gap-0.5 px-3 pt-4 flex-1 overflow-y-auto">
         {navLinks.map((link) => {
-          const active = pathname === link.href;
+          const active = pathname === link.href || pathname.startsWith(`${link.href}/`);
           return (
             <Link
               key={link.href}
               href={link.href}
-              className={`flex items-center gap-3 border-l-2 px-3 py-2 text-sm transition-colors ${
+              className={`nav-item flex items-start gap-3 border-l-2 px-3 py-2.5 text-sm transition-colors ${
                 active
-                  ? "border-primary-700 bg-primary-50 text-primary-800 font-medium"
+                  ? "border-primary-700 bg-primary-50 text-primary-800"
                   : "border-transparent text-ink-muted hover:bg-cream-200 hover:text-ink"
               }`}
             >
-              <svg className="w-[18px] h-[18px] flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-[18px] h-[18px] flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 {link.icon}
               </svg>
-              {link.label}
+              <div className="nav-text flex flex-col">
+                <span className={`nav-label leading-tight ${active ? "font-medium text-primary-800" : "text-ink"}`}>
+                  {link.label}
+                </span>
+                <span className="nav-subtitle text-xs text-ink-muted leading-tight mt-0.5">
+                  {link.subtitle}
+                </span>
+              </div>
             </Link>
           );
         })}
@@ -167,6 +171,20 @@ export default function Sidebar() {
             <p className="truncate font-mono text-[11px] text-ink-muted">{user?.email || ""}</p>
           </div>
         </div>
+        <Link
+          href="/settings"
+          className={`mt-1 flex w-full items-center gap-2 rounded-md px-2 py-2 text-sm transition-colors ${
+            pathname === "/settings"
+              ? "bg-primary-50 text-primary-800"
+              : "text-ink-muted hover:bg-cream-200 hover:text-ink"
+          }`}
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+          </svg>
+          Settings
+        </Link>
         <button
           onClick={logout}
           className="mt-1 flex w-full items-center gap-2 rounded-md px-2 py-2 text-sm text-ink-muted hover:bg-cream-200 hover:text-rose-700 transition-colors"

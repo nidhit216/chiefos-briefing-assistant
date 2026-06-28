@@ -11,7 +11,10 @@ from app.models.note import Note
 from app.models.daily_brief import DailyBrief
 from app.models.memory import Memory
 from app.services.ai_client import get_openai_client
+from app.services.email_classifier import email_visibility_filter
 from app.services.brief_tasks import sync_brief_tasks
+from app.services.datetime_utils import humanize_datetime
+from app.services.attention_guardrail import enforce_positive_framing
 
 settings = get_settings()
 
@@ -29,7 +32,7 @@ async def generate_brief(user: User, db: AsyncSession) -> DailyBrief:
     # Gather context
     emails_result = await db.execute(
         select(Email)
-        .where(Email.user_id == user.id, Email.archived == False, Email.low_signal == False)
+        .where(Email.user_id == user.id, email_visibility_filter())
         .order_by(Email.received_at.desc())
         .limit(20)
     )
@@ -61,7 +64,7 @@ async def generate_brief(user: User, db: AsyncSession) -> DailyBrief:
         for e in emails
     )
     events_context = "\n".join(
-        f"- {ev.title} at {ev.start_time} | Attendees: {ev.attendees}"
+        f"- {ev.title} at {humanize_datetime(ev.start_time, user.timezone)} | Attendees: {ev.attendees}"
         for ev in events
     )
     notes_context = "\n".join(
@@ -75,7 +78,7 @@ Based on their emails, calendar events, and personal notes, produce a structured
 Respond with ONLY valid JSON in this exact format:
 {
   "executive_summary": "2-3 sentence narrative in the voice of a real Chief of Staff, e.g. 'Good morning {name}. Today is primarily focused on...'",
-  "attention_required": ["<what> — <deadline/time window, if any> — <consequence if ignored>"],
+  "attention_required": ["<what> — <deadline/time window, if any> — <what's gained by handling it now>"],
   "recommendations": {"morning": "What to do first", "afternoon": "What to do next", "evening": "What to wrap up with"},
   "focus_breakdown": [{"label": "Product", "percent": 70}, {"label": "Career", "percent": 20}, {"label": "Personal", "percent": 10}]
 }
@@ -85,7 +88,7 @@ Rules:
 - "attention_required": ONLY genuine exceptions — risks, blockers, overdue items, missed commitments.
   - Urgency gate: before adding anything, ask whether a specific person is actually waiting on a decision or reply, with a deadline and consequence specific to the user — not generic platform boilerplate. Automated account/compliance reminders, "act now or lose access" nags, job-board digests, and recruiter outreach are written to sound urgent by design; restate their real stakes plainly instead of repeating their dramatic phrasing as fact, and if nothing genuine remains, leave the list empty rather than padding it with these.
   - One entry per distinct underlying issue, even if it surfaces from multiple emails or sources. Before adding an item, check whether it's just a reworded version of one already in the list, of something already added from a different email on the same topic, or of something raised in a prior brief (see memory below) — merge those into a single entry instead of repeating the same fact in different words.
-  - Each entry is one sentence following the template: <what> — <deadline or time window if any> — <consequence if ignored>. Use the same concrete nouns/phrasing each time the same recurring issue appears across days so it stays recognizable as the same item over time.
+  - Each entry is one sentence following the template: <what> — <deadline or time window if any> — <what's gained by handling it now>. Frame the third clause as the positive outcome of acting, not the penalty for ignoring it — e.g. "secures your spot in the cohort" rather than "you'll miss the cohort", "keeps the launch on track" rather than "launch will be delayed". Use the same concrete nouns/phrasing each time the same recurring issue appears across days so it stays recognizable as the same item over time.
   - Order the array by urgency-and-impact together, not by the order things appear in the source data: weigh how soon it's due AND how much actually goes wrong if ignored. A small task due in hours can outrank a vague long-term risk; a high-impact missed commitment can outrank a low-stakes same-day task. Put the single most urgent-and-important item first.
   - Cap at 5 entries. If more genuinely qualify, keep only the 5 most urgent-and-important and drop the rest.
   - Omit this key (use an empty list) if nothing qualifies; do not pad it.
@@ -158,11 +161,15 @@ Generate today's daily brief."""
             detail="AI returned an invalid response. Please try generating again.",
         )
 
+    brief_json["attention_required"] = enforce_positive_framing(
+        brief_json.get("attention_required") or []
+    )
+
     # Save to database
     brief = DailyBrief(
         user_id=user.id,
         brief_date=date.today(),
-        content=brief_content,
+        content=json.dumps(brief_json),
     )
     db.add(brief)
     await sync_brief_tasks(user, brief_json, db)

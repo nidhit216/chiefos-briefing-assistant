@@ -15,6 +15,7 @@ class User(Base):
     google_access_token: Mapped[str | None] = mapped_column(String(2048))
     google_refresh_token: Mapped[str | None] = mapped_column(String(2048))
     google_token_expiry: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    timezone: Mapped[str] = mapped_column(String(64), default="Asia/Kolkata", server_default="Asia/Kolkata")
 
     notes: Mapped[list["Note"]] = relationship(back_populates="user", lazy="selectin")  # noqa: F821
     briefs: Mapped[list["DailyBrief"]] = relationship(back_populates="user", lazy="selectin")  # noqa: F821

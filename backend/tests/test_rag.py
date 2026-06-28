@@ -8,7 +8,10 @@ from unittest.mock import AsyncMock
 
 from sqlalchemy import delete
 
+from datetime import datetime, timezone
+
 from app.database import async_session
+from app.models.email import Email
 from app.models.embedding import DocumentEmbedding
 from app.services import rag as rag_service
 
@@ -41,6 +44,30 @@ async def cleanup_embeddings(user_id):
         await session.commit()
 
 
+async def seed_email(user_id, archived=False, low_signal=False):
+    async with async_session() as session:
+        email = Email(
+            id=uuid.uuid4(),
+            user_id=user_id,
+            gmail_message_id=str(uuid.uuid4()),
+            sender="someone@example.com",
+            subject="subject",
+            snippet="snippet",
+            received_at=datetime.now(timezone.utc),
+            archived=archived,
+            low_signal=low_signal,
+        )
+        session.add(email)
+        await session.commit()
+        return email.id
+
+
+async def cleanup_email(email_id):
+    async with async_session() as session:
+        await session.execute(delete(Email).where(Email.id == email_id))
+        await session.commit()
+
+
 async def test_semantic_search_executes_without_sql_syntax_error_and_ranks_by_similarity(
     test_user, monkeypatch
 ):
@@ -60,8 +87,9 @@ async def test_semantic_search_executes_without_sql_syntax_error_and_ranks_by_si
 
 
 async def test_semantic_search_filters_by_source_type(test_user, monkeypatch):
+    email_id = await seed_email(test_user.id)
     await seed_embedding(test_user.id, "note", "a note", make_vector(0))
-    await seed_embedding(test_user.id, "email", "an email", make_vector(0))
+    await seed_embedding(test_user.id, "email", "an email", make_vector(0), source_id=email_id)
     monkeypatch.setattr(rag_service, "generate_embedding", AsyncMock(return_value=make_vector(0)))
 
     try:
@@ -74,6 +102,30 @@ async def test_semantic_search_filters_by_source_type(test_user, monkeypatch):
         assert results[0]["content"] == "an email"
     finally:
         await cleanup_embeddings(test_user.id)
+        await cleanup_email(email_id)
+
+
+async def test_semantic_search_excludes_noisy_emails(test_user, monkeypatch):
+    """Ask/search must hide the same noise the dashboard hides (see email_visibility_filter)."""
+    noisy_id = await seed_email(test_user.id, low_signal=True)
+    archived_id = await seed_email(test_user.id, archived=True)
+    visible_id = await seed_email(test_user.id)
+    await seed_embedding(test_user.id, "email", "noisy", make_vector(0), source_id=noisy_id)
+    await seed_embedding(test_user.id, "email", "archived", make_vector(0), source_id=archived_id)
+    await seed_embedding(test_user.id, "email", "visible", make_vector(0), source_id=visible_id)
+    monkeypatch.setattr(rag_service, "generate_embedding", AsyncMock(return_value=make_vector(0)))
+
+    try:
+        async with async_session() as session:
+            results = await rag_service.semantic_search(
+                "query", test_user.id, session, source_type="email"
+            )
+
+        assert [r["content"] for r in results] == ["visible"]
+    finally:
+        await cleanup_embeddings(test_user.id)
+        for email_id in (noisy_id, archived_id, visible_id):
+            await cleanup_email(email_id)
 
 
 async def test_semantic_search_respects_limit(test_user, monkeypatch):
