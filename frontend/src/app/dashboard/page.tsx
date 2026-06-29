@@ -2,18 +2,17 @@
 
 import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 import { motion } from "framer-motion";
 import { apiFetch } from "@/lib/api";
 import AppHeader from "@/app/components/AppHeader";
 import PageShell from "@/app/components/PageShell";
 import Toast from "@/app/components/Toast";
 import { useBriefGeneration } from "@/app/context/BriefGenerationContext";
+import { useMode } from "@/app/context/ModeContext";
 import type {
   User,
   Email,
   CalendarEvent,
-  Note,
   DailyBrief,
   BriefContent,
   BriefTask,
@@ -106,26 +105,328 @@ function FocusBreakdownDonut({ breakdown }: { breakdown: { label: string; percen
   );
 }
 
+const MOOD_EMOJIS = ["😔", "😐", "🙂", "😊", "🤩"];
+
+function DropletIcon() {
+  return (
+    <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 2.69l5.66 5.66a8 8 0 11-11.32 0L12 2.69z" />
+    </svg>
+  );
+}
+
+function BarbellIcon() {
+  return (
+    <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 7v10M3 9v6m18-6v6m-3-8v10M9 12h6" />
+    </svg>
+  );
+}
+
+function BookIcon() {
+  return (
+    <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.042A8.967 8.967 0 006 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 016 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 016-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0018 18a8.967 8.967 0 00-6 2.292m0-14.25v14.25" />
+    </svg>
+  );
+}
+
+function PhoneIcon() {
+  return (
+    <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2 3.5a1 1 0 011-1h2.4a1 1 0 01.985.81l.755 4.025a1 1 0 01-.272.93l-1.43 1.43a14.5 14.5 0 006.36 6.36l1.43-1.43a1 1 0 01.93-.272l4.025.755a1 1 0 01.81.985V20a1 1 0 01-1 1h-1.5C9.94 21 3 14.06 3 5.5V4" />
+    </svg>
+  );
+}
+
+function MapPinIcon() {
+  return (
+    <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a2 2 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+    </svg>
+  );
+}
+
+function BookOpenIcon() {
+  return (
+    <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.042A8.967 8.967 0 006 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 016 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 016-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0018 18a8.967 8.967 0 00-6 2.292m0-14.25v14.25" />
+    </svg>
+  );
+}
+
+interface HabitDotsProps {
+  done: number;
+  total: number;
+  onToggle: (index: number) => void;
+}
+
+function HabitDots({ done, total, onToggle }: HabitDotsProps) {
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {Array.from({ length: total }).map((_, i) => {
+        const isDone = i < done;
+        const isToday = i === done;
+        return (
+          <button
+            key={i}
+            onClick={() => onToggle(i)}
+            className="rounded-full transition-colors"
+            style={{
+              width: 20,
+              height: 20,
+              background: isDone
+                ? "var(--mode-accent)"
+                : isToday
+                ? "var(--mode-bg-3)"
+                : "transparent",
+              border: isDone
+                ? "none"
+                : isToday
+                ? "1.5px solid var(--mode-muted)"
+                : "1.5px solid var(--mode-border)",
+            }}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
+interface HabitBlockProps {
+  icon: React.ReactNode;
+  name: string;
+  done: number;
+  total: number;
+  unit: string;
+  onToggle: (index: number) => void;
+  onLog: () => void;
+}
+
+function HabitBlock({ icon, name, done, total, unit, onToggle, onLog }: HabitBlockProps) {
+  return (
+    <div
+      className="flex-1 rounded-xl"
+      style={{
+        background: "var(--mode-bg-2)",
+        border: "0.5px solid var(--mode-border)",
+        padding: "14px 16px",
+      }}
+    >
+      <div className="flex items-center gap-1.5" style={{ color: "var(--mode-accent)" }}>
+        {icon}
+        <span className="text-sm font-medium" style={{ color: "var(--mode-text)" }}>
+          {name}
+        </span>
+      </div>
+      <p className="mt-0.5 text-xs" style={{ color: "var(--mode-muted)" }}>
+        {done} of {total} {unit}
+      </p>
+      <div className="mt-3">
+        <HabitDots done={done} total={total} onToggle={onToggle} />
+      </div>
+      <button
+        onClick={onLog}
+        className="mt-3 text-xs font-medium hover:underline"
+        style={{ color: "var(--mode-accent)" }}
+      >
+        Log
+      </button>
+    </div>
+  );
+}
+
+// TODO: replace with API data from Apple Reminders / Google Maps / Books
+const RADAR_ITEMS = [
+  {
+    icon: <PhoneIcon />,
+    text: "You haven't called Mum since Sunday — 6 days ago",
+    source: "Apple Reminders",
+    tag: "family",
+  },
+  {
+    icon: <MapPinIcon />,
+    text: "Coorg trip — 3 stays bookmarked, prices rise after July",
+    source: "Google Maps",
+    tag: "personal",
+  },
+  {
+    icon: <BookOpenIcon />,
+    text: "Chapter 14 of Thinking, Fast and Slow — close to end of Part 2",
+    source: "Apple Books",
+    tag: "leisure",
+  },
+];
+
+function PersonalDashboard() {
+  const [mood, setMood] = useState<number | null>(null);
+  const [moodNote, setMoodNote] = useState("");
+  const [water, setWater] = useState(5);
+  const [gym, setGym] = useState(3);
+  const [reading, setReading] = useState(3);
+
+  function toggleDot(current: number, set: (v: number) => void, index: number) {
+    set(index < current ? index : index + 1);
+  }
+
+  return (
+    <div className="flex flex-col gap-6">
+      {/* Mood check-in strip */}
+      <div
+        className="flex flex-col sm:flex-row sm:items-center gap-3 rounded-xl"
+        style={{
+          background: "var(--mode-bg-2)",
+          border: "1px solid var(--mode-border)",
+          padding: "12px 16px",
+        }}
+      >
+        <span className="text-sm font-medium flex-shrink-0" style={{ color: "var(--mode-text)" }}>
+          How are you feeling today?
+        </span>
+        <div className="flex gap-1.5">
+          {MOOD_EMOJIS.map((emoji, i) => (
+            <button
+              key={i}
+              onClick={() => setMood(i)}
+              className="flex h-9 w-9 items-center justify-center rounded-full text-lg transition-colors"
+              style={
+                mood === i
+                  ? { border: "1.5px solid var(--mode-accent)", background: "var(--mode-bg-3)" }
+                  : { border: "1.5px solid transparent", background: "transparent" }
+              }
+            >
+              {emoji}
+            </button>
+          ))}
+        </div>
+        <input
+          type="text"
+          value={moodNote}
+          onChange={(e) => setMoodNote(e.target.value)}
+          placeholder="Anything on your mind?"
+          className="flex-1 min-w-0 bg-transparent text-sm outline-none placeholder:opacity-60"
+          style={{ color: "var(--mode-text)" }}
+        />
+      </div>
+
+      {/* Habits */}
+      <div>
+        <h2
+          className="font-mono text-[10px] font-semibold uppercase tracking-widest mb-3"
+          style={{ color: "var(--mode-muted)" }}
+        >
+          Today&apos;s habits
+        </h2>
+        <div className="flex flex-col sm:flex-row gap-3">
+          <HabitBlock
+            icon={<DropletIcon />}
+            name="Water"
+            done={water}
+            total={8}
+            unit="glasses today"
+            onToggle={(i) => toggleDot(water, setWater, i)}
+            onLog={() => setWater((v) => Math.min(8, v + 1))}
+          />
+          <HabitBlock
+            icon={<BarbellIcon />}
+            name="Gym"
+            done={gym}
+            total={5}
+            unit="days this week"
+            onToggle={(i) => toggleDot(gym, setGym, i)}
+            onLog={() => setGym((v) => Math.min(5, v + 1))}
+          />
+          <HabitBlock
+            icon={<BookIcon />}
+            name="Reading"
+            done={reading}
+            total={7}
+            unit="days this week"
+            onToggle={(i) => toggleDot(reading, setReading, i)}
+            onLog={() => setReading((v) => Math.min(7, v + 1))}
+          />
+        </div>
+      </div>
+
+      {/* Divider */}
+      <div style={{ background: "var(--mode-border)", height: "0.5px", margin: "0" }} />
+
+      {/* Gently on your radar */}
+      <div>
+        <h2
+          className="font-mono text-[10px] font-semibold uppercase tracking-widest mb-3"
+          style={{ color: "var(--mode-muted)" }}
+        >
+          Gently on your radar
+        </h2>
+        <ul>
+          {RADAR_ITEMS.map((item, i) => (
+            <li
+              key={i}
+              className="flex items-start gap-3 py-3"
+              style={{
+                borderBottom:
+                  i < RADAR_ITEMS.length - 1 ? "1px solid var(--mode-border-soft)" : "none",
+              }}
+            >
+              <div
+                className="flex flex-shrink-0 items-center justify-center"
+                style={{
+                  width: 30,
+                  height: 30,
+                  borderRadius: 8,
+                  background: "var(--mode-icon-bg)",
+                  color: "var(--mode-icon-color)",
+                }}
+              >
+                {item.icon}
+              </div>
+              <div className="min-w-0 flex-1">
+                <p style={{ fontSize: 13.5, color: "var(--mode-text)", lineHeight: 1.5 }}>
+                  {item.text}
+                </p>
+                <p className="mt-1" style={{ fontSize: 11, color: "var(--mode-muted)" }}>
+                  {item.source}
+                </p>
+              </div>
+              <span
+                className="flex-shrink-0 rounded-full"
+                style={{
+                  fontSize: 10,
+                  background: "var(--mode-bg-3)",
+                  color: "var(--mode-accent)",
+                  padding: "1px 8px",
+                }}
+              >
+                {item.tag}
+              </span>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </div>
+  );
+}
+
 export default function DashboardPage() {
   const router = useRouter();
+  const { mode } = useMode();
   const currentTimeSlot = useMemo(() => getCurrentTimeSlot(), []);
   const [user, setUser] = useState<User | null>(null);
   const [brief, setBrief] = useState<BriefContent | null>(null);
   const [emails, setEmails] = useState<Email[]>([]);
   const [events, setEvents] = useState<CalendarEvent[]>([]);
-  const [notes, setNotes] = useState<Note[]>([]);
   const [tasks, setTasks] = useState<BriefTask[]>([]);
   const [loading, setLoading] = useState(true);
   const [syncingEmails, setSyncingEmails] = useState(false);
   const [syncingCalendar, setSyncingCalendar] = useState(false);
-  const [refreshingNotes, setRefreshingNotes] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<{
     brief: Date | null;
-    notes: Date | null;
     calendar: Date | null;
     emails: Date | null;
-  }>({ brief: null, notes: null, calendar: null, emails: null });
+  }>({ brief: null, calendar: null, emails: null });
   const calendarAbortRef = useRef<AbortController | null>(null);
   const emailsAbortRef = useRef<AbortController | null>(null);
   const { generating, generationVersion, generate, cancel } = useBriefGeneration();
@@ -143,27 +444,6 @@ export default function DashboardPage() {
   const archiveEvent = useCallback(async (id: string) => {
     await apiFetch(`/calendar/${id}/archive`, { method: "POST" });
     setEvents((prev) => prev.filter((e) => e.id !== id));
-  }, []);
-
-  const sortedNotes = useMemo(
-    () => [...notes].sort((a, b) => Number(a.completed) - Number(b.completed)).slice(0, 6),
-    [notes]
-  );
-
-  const toggleNoteCompleted = useCallback(async (note: Note) => {
-    setNotes((prev) =>
-      prev.map((n) => (n.id === note.id ? { ...n, completed: !n.completed } : n))
-    );
-    await apiFetch(`/notes/${note.id}`, {
-      method: "PUT",
-      body: JSON.stringify({
-        title: note.title,
-        content: note.content,
-        tags: note.tags,
-        due_date: note.due_date,
-        completed: !note.completed,
-      }),
-    });
   }, []);
 
   const toggleTaskCompleted = useCallback(async (task: BriefTask) => {
@@ -209,11 +489,10 @@ export default function DashboardPage() {
 
     async function loadDashboard() {
       try {
-        const [userRes, emailsRes, eventsRes, notesRes] = await Promise.all([
+        const [userRes, emailsRes, eventsRes] = await Promise.all([
           apiFetch("/auth/me"),
           apiFetch("/emails/"),
           apiFetch("/calendar/"),
-          apiFetch("/notes/"),
         ]);
 
         setUser(await userRes.json());
@@ -232,13 +511,6 @@ export default function DashboardPage() {
           setEvents(eventsData);
           if (eventsData.length > 0) {
             setLastUpdated((prev) => ({ ...prev, calendar: now }));
-          }
-        }
-        if (notesRes.ok) {
-          const notesData = await notesRes.json();
-          setNotes(notesData);
-          if (notesData.length > 0) {
-            setLastUpdated((prev) => ({ ...prev, notes: now }));
           }
         }
       } catch (_) {
@@ -264,6 +536,16 @@ export default function DashboardPage() {
       <main className="flex min-h-screen items-center justify-center">
         <p className="font-mono text-sm text-ink-muted">Loading your dashboard...</p>
       </main>
+    );
+  }
+
+  if (mode === "personal") {
+    return (
+      <PageShell>
+        <AppHeader userName={user?.name?.split(" ")[0]} />
+        {toast && <Toast message={toast} onClose={() => setToast(null)} />}
+        <PersonalDashboard />
+      </PageShell>
     );
   }
 
@@ -404,90 +686,6 @@ export default function DashboardPage() {
               No brief generated yet today. Click the refresh icon above to generate one.
             </p>
             </>
-          )}
-        </section>
-
-        {/* Notes */}
-        <section className="bg-cream-50 border border-ink/10 rounded-md p-6 lg:col-span-2">
-          <div className="flex justify-between items-center mb-4">
-            <div>
-              <h2 className="font-serif text-2xl text-ink">
-                Personal Notes
-              </h2>
-              <LastUpdated at={lastUpdated.notes} />
-            </div>
-            <div className="flex items-center gap-3">
-              <button
-                onClick={async () => {
-                  setRefreshingNotes(true);
-                  try {
-                    const res = await apiFetch("/notes/");
-                    if (res.ok) {
-                      setNotes(await res.json());
-                      setLastUpdated((prev) => ({ ...prev, notes: new Date() }));
-                      setToast("Notes refreshed");
-                    }
-                  } catch (_) {}
-                  setRefreshingNotes(false);
-                }}
-                disabled={refreshingNotes}
-                className="p-2 text-ink-muted hover:text-primary-700 hover:bg-cream-200 rounded-md transition-colors disabled:opacity-50"
-                title="Refresh notes"
-              >
-                <svg className={`w-5 h-5 ${refreshingNotes ? "animate-spin" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                </svg>
-              </button>
-              <Link
-                href="/notes"
-                className="text-primary-600 text-sm hover:underline"
-              >
-                View All
-              </Link>
-            </div>
-          </div>
-          {notes.length > 0 ? (
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-              {sortedNotes.map((note) => (
-                <div
-                  key={note.id}
-                  className="border border-ink/10 rounded-md p-3"
-                >
-                  <div className="flex items-start gap-2">
-                    <input
-                      type="checkbox"
-                      checked={note.completed}
-                      onChange={() => toggleNoteCompleted(note)}
-                      className="mt-0.5 h-3.5 w-3.5 rounded border-ink/20 text-primary-700 focus:ring-primary-600"
-                    />
-                    <p
-                      className={`font-medium text-sm ${
-                        note.completed ? "line-through text-ink-muted" : "text-ink"
-                      }`}
-                    >
-                      {note.title}
-                    </p>
-                  </div>
-                  <p className="text-xs text-ink-muted truncate">
-                    {note.content.replace(/<[^>]+>/g, " ")}
-                  </p>
-                  {note.tags && (
-                    <div className="flex gap-1 mt-2 flex-wrap">
-                      {note.tags.map((tag) => (
-                        <span
-                          key={tag}
-                          className="font-mono text-[11px] bg-cream-200 text-ink-muted px-2 py-0.5 rounded"
-                        >
-                          {tag}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="text-ink-muted">No notes yet.</p>
           )}
         </section>
 

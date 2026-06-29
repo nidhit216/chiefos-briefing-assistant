@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Inter, Source_Serif_4, JetBrains_Mono } from "next/font/google";
 import { BriefGenerationProvider } from "./context/BriefGenerationContext";
+import { ModeProvider } from "./context/ModeContext";
 import "./globals.css";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
@@ -20,7 +21,9 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${inter.variable} ${sourceSerif.variable} ${jetbrainsMono.variable}`}>
       <body className="min-h-screen bg-cream-100 font-sans text-ink antialiased">
-        <BriefGenerationProvider>{children}</BriefGenerationProvider>
+        <ModeProvider>
+          <BriefGenerationProvider>{children}</BriefGenerationProvider>
+        </ModeProvider>
       </body>
     </html>
   );

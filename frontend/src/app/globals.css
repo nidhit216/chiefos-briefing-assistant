@@ -27,3 +27,45 @@ body {
 .animate-slide-up {
   animation: slide-up 0.2s ease-out;
 }
+
+[data-mode="work"] {
+  --mode-bg:          #FFFDF9;
+  --mode-bg-2:        #FAF7F0;
+  --mode-bg-3:        #F2EDE0;
+  --mode-border:      #E0D8C8;
+  --mode-border-soft: #EDE8DC;
+  --mode-accent:      #1B2A4A;
+  --mode-accent-light:#F0F3F8;
+  --mode-accent-text: #1B2A4A;
+  --mode-muted:       #5A5650;
+  --mode-text:        #1A1A18;
+  --mode-toggle-bg:   #E8E0CC;
+  --mode-pill-bg:     #1B2A4A;
+  --mode-pill-text:   #FFFDF9;
+  --mode-icon-bg:     #E8E0CC;
+  --mode-icon-color:  #1B2A4A;
+}
+
+[data-mode="personal"] {
+  --mode-bg:          #FFF8F4;
+  --mode-bg-2:        #FFF0E8;
+  --mode-bg-3:        #FAE8D8;
+  --mode-border:      #F0D4C0;
+  --mode-border-soft: #F8E8D8;
+  --mode-accent:      #6B2E10;
+  --mode-accent-light:#FFF0E8;
+  --mode-accent-text: #6B2E10;
+  --mode-muted:       #B07050;
+  --mode-text:        #2A1008;
+  --mode-toggle-bg:   #F5D8C4;
+  --mode-pill-bg:     #6B2E10;
+  --mode-pill-text:   #FFF8F4;
+  --mode-icon-bg:     #F5D8C4;
+  --mode-icon-color:  #6B2E10;
+}
+
+body {
+  background: var(--mode-bg);
+  color: var(--mode-text);
+  transition: background 0.25s ease, color 0.25s ease;
+}

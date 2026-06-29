@@ -5,6 +5,24 @@ import { useRouter } from "next/navigation";
 import { apiFetch } from "@/lib/api";
 import PageShell from "@/app/components/PageShell";
 import Toast from "@/app/components/Toast";
+import type { User } from "@/types";
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
+interface ConnectedApp {
+  name: string;
+  letter: string;
+  color: string;
+  comingSoon?: boolean;
+}
+
+const CONNECTED_APPS: ConnectedApp[] = [
+  { name: "Gmail", letter: "M", color: "bg-red-100 text-red-700" },
+  { name: "Google Calendar", letter: "C", color: "bg-blue-100 text-blue-700" },
+  { name: "Slack", letter: "S", color: "bg-purple-100 text-purple-700", comingSoon: true },
+  { name: "Notion", letter: "N", color: "bg-ink/10 text-ink", comingSoon: true },
+  { name: "Jira", letter: "J", color: "bg-sky-100 text-sky-700", comingSoon: true },
+];
 
 function SettingsSection({
   title,
@@ -48,10 +66,18 @@ export default function SettingsPage() {
   const router = useRouter();
   const [embedding, setEmbedding] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
+  const [user, setUser] = useState<User | null>(null);
 
   useEffect(() => {
     const token = localStorage.getItem("chiefos_token");
-    if (!token) router.push("/login");
+    if (!token) {
+      router.push("/login");
+      return;
+    }
+    apiFetch("/auth/me")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => data && setUser(data))
+      .catch(() => {});
   }, [router]);
 
   const embedData = async () => {
@@ -82,6 +108,44 @@ export default function SettingsPage() {
       </div>
 
       <div className="space-y-6">
+        <SettingsSection
+          title="Connected Apps"
+          description="Manage which external services ChiefOS can access."
+        >
+          {CONNECTED_APPS.map((app) => {
+            const isGoogle = app.name === "Gmail" || app.name === "Google Calendar";
+            const connected = isGoogle && !!user?.google_connected;
+            return (
+              <SettingRow
+                key={app.name}
+                label={app.name}
+                description={app.comingSoon ? "Coming soon" : connected ? "Connected" : "Not connected"}
+                action={
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={`flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full text-[11px] font-medium ${app.color} ${
+                        app.comingSoon ? "opacity-50" : ""
+                      }`}
+                    >
+                      {app.letter}
+                    </span>
+                    {app.comingSoon ? null : connected ? (
+                      <span className="h-1.5 w-1.5 flex-shrink-0 rounded-full bg-green-500" title="Connected" />
+                    ) : (
+                      <a
+                        href={`${API_URL}/auth/login`}
+                        className="text-sm bg-primary-100 text-primary-800 px-3 py-1.5 rounded-md hover:bg-primary-200 transition-colors whitespace-nowrap"
+                      >
+                        Connect
+                      </a>
+                    )}
+                  </div>
+                }
+              />
+            );
+          })}
+        </SettingsSection>
+
         <SettingsSection
           title="Data & Sync"
           description="Manage how ChiefOS indexes your emails, notes, and calendar for search and Ask."

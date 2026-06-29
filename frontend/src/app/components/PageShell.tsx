@@ -8,7 +8,7 @@ export default function PageShell({
   maxWidth?: string;
 }) {
   return (
-    <div className="min-h-screen md:ml-60">
+    <div className="min-h-screen md:ml-60" style={{ background: "var(--mode-bg)" }}>
       <Sidebar />
       <div className={`mx-auto px-8 py-10 ${maxWidth}`}>{children}</div>
     </div>
